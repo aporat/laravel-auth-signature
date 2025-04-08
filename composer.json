@@ -1,0 +1,70 @@
+{
+    "name": "aporat/laravel-auth-signature",
+    "description": "",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/aporat/laravel-auth-signature",
+    "keywords": [
+        "laravel",
+        "auth",
+        "signature",
+        "api"
+    ],
+    "authors": [
+        {
+            "name": "Adar Porat",
+            "email": "aporat28@gmail.com",
+            "homepage": "https://github.com/aporat",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "ext-json": "*",
+        "illuminate/support": "^10.0 || ^11.0 || ^12.0",
+        "illuminate/log": "^10.0 || ^11.0 || ^12.0",
+        "aporat/laravel-filter-var": "dev-main"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "laravel/pint": "^1.21",
+        "phpunit/phpunit": "^12.0",
+        "mockery/mockery": "^1.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Aporat\\AuthSignature\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Aporat\\AuthSignature\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Aporat\\AuthSignature\\Laravel\\AuthSignatureServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-ci": "phpunit --coverage-text --coverage-clover coverage.xml --log-junit junit.xml",
+        "check": "vendor/bin/pint --test"
+    },
+    "support": {
+        "issues": "https://github.com/aporat/laravel-auth-signature/issues",
+        "source": "https://github.com/aporat/laravel-auth-signature"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
