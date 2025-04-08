@@ -1,12 +1,12 @@
 # Laravel Auth Signature
 A Laravel package providing a middleware for validating API requests with HMAC-SHA256 signatures, featuring configurable template orders and version-specific authentication settings.
 
-[![Latest Stable Version](https://img.shields.io/packagist/v/aporat/laravel-auth-signature.svg?style=flat-square&logo=composer)](https://packagist.org/packages/aporat/laravel-auth-signature)
-[![Monthly Downloads](https://img.shields.io/packagist/dm/aporat/laravel-auth-signature.svg?style=flat-square&logo=composer)](https://packagist.org/packages/aporat/laravel-auth-signature)
+[![Packagist Version](https://img.shields.io/packagist/v/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
+[![Packagist Downloads](https://img.shields.io/packagist/dt/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
 [![Codecov](https://img.shields.io/codecov/c/github/aporat/laravel-auth-signature?style=flat-square)](https://codecov.io/github/aporat/laravel-auth-signature)
 [![Laravel Version](https://img.shields.io/badge/Laravel-12.x-orange.svg?style=flat-square)](https://laravel.com/docs/12.x)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/aporat/laravel-auth-signature/ci.yml?style=flat-square)
-[![License](https://img.shields.io/packagist/l/aporat/laravel-auth-signature.svg?style=flat-square)](https://github.com/aporat/laravel-auth-signature/blob/master/LICENSE)
+![GitHub License](https://img.shields.io/github/license/aporat/laravel-auth-signature?style=flat-square)
 
 A Laravel package for signature-based authentication, providing a middleware to validate API requests using HMAC-SHA256 signatures.
 
@@ -26,7 +26,7 @@ The service provider (`AuthSignatureServiceProvider`) is automatically registere
 ```php
 'providers' => [
 // ...
-Aporat\\AuthSignature\\Laravel\\AuthSignatureServiceProvider::class,
+  Aporat\\AuthSignature\\Laravel\\AuthSignatureServiceProvider::class,
 ],
 ```
 
