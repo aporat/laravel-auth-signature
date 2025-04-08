@@ -3,7 +3,6 @@
 namespace Aporat\AuthSignature\Tests;
 
 use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
-use Aporat\AuthSignature\SignatureGenerator;
 use Aporat\FilterVar\Laravel\FilterVarServiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -12,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 class MiddlewareValidateAuthSignatureTest extends TestCase
 {
-    protected $signatureGenerator;
+    protected array $config;
 
     protected function getPackageProviders($app): array
     {
@@ -41,11 +40,10 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
                         'bundle_id',
                         'timestamp',
                         'client_id',
-                        'auth_version',
                         'state',
+                        'auth_version',
                         'method',
                         'signature',
-                        'version_signature',
                         'path',
                     ],
                 ],
@@ -56,7 +54,6 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     #[Test]
     public function it_passes_with_valid_signature(): void
     {
-        // Test data
         $timestamp = time();
         $clientId = 'client-id';
         $authVersion = 1;
@@ -73,20 +70,13 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
         $request->headers->set('User-Agent', "App (iOS; $authVersion; $clientId)");
 
         // Generate the expected signature
-        $signatureGenerator = new SignatureGenerator($this->config);
-        $expectedSignature = $signatureGenerator->generate(
-            $clientId,
-            $authVersion,
-            $timestamp,
-            $method,
-            $path,
-            $params
-        );
+        $signatureGenerator = new \Aporat\AuthSignature\SignatureGenerator($this->config);
+        $expectedSignature = $signatureGenerator->generate($clientId, $authVersion, $timestamp, $method, $path, $params);
         $request->headers->set('X-Auth-Signature', $expectedSignature);
 
         // Instantiate middleware and test
         $middleware = new ValidateAuthSignature($this->config);
-        $response = $middleware->handle($request, fn ($req) => new Response('OK'));
+        $response = $middleware->handle($request, fn($req) => new Response('OK'));
 
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertEquals('OK', $response->getContent());

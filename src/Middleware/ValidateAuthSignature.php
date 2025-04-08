@@ -55,7 +55,7 @@ class ValidateAuthSignature
             return response()->json();
         }
 
-        if ($authSignature < $clientSettings['min_auth_level']) {
+        if ($authVersion < $clientSettings['min_auth_level']) {
             throw new SignatureException('You are currently running an older version of the app. Please update your application to continue.');
         }
 
