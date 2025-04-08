@@ -31,7 +31,7 @@ class SignatureGenerator
         $clientSecret = $this->config['clients'][$clientId]['client_secret'];
         $bundleId = $this->config['clients'][$clientId]['bundle_id'];
 
-        if (!empty($this->config['auth_versions'][$authVersion]['secret'])) {
+        if (! empty($this->config['auth_versions'][$authVersion]['secret'])) {
             $clientSecret .= $this->config['auth_versions'][$authVersion]['secret'];
         }
 

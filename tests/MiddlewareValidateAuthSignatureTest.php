@@ -30,7 +30,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
                 'client-id' => [
                     'client_secret' => 'secret',
                     'bundle_id' => 'com.test.app',
-                    'min_auth_level' => 1
+                    'min_auth_level' => 1,
                 ],
             ],
             'auth_versions' => [
@@ -86,7 +86,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
 
         // Instantiate middleware and test
         $middleware = new ValidateAuthSignature($this->config);
-        $response = $middleware->handle($request, fn($req) => new Response('OK'));
+        $response = $middleware->handle($request, fn ($req) => new Response('OK'));
 
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertEquals('OK', $response->getContent());

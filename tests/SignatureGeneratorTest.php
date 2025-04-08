@@ -25,7 +25,7 @@ class SignatureGeneratorTest extends TestCase
             'auth_versions' => [
                 1 => [
                     'secret' => 'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ',
-                    'state' => 'RSA2048'
+                    'state' => 'RSA2048',
                 ],
             ],
         ]);
@@ -46,18 +46,18 @@ class SignatureGeneratorTest extends TestCase
         // Expected signature computation
         ksort($params);
         $signatureString = implode('&', [
-            'foo=' . rawurlencode('bar'),
-            'key=' . rawurlencode('value'),
+            'foo='.rawurlencode('bar'),
+            'key='.rawurlencode('value'),
         ]);
-        $template = urldecode('com.test.app') .
-            '1698777600' .
-            'client-id' .
-            'RSA2048' .
-            '1' .
-            'GET' .
-            $signatureString .
+        $template = urldecode('com.test.app').
+            '1698777600'.
+            'client-id'.
+            'RSA2048'.
+            '1'.
+            'GET'.
+            $signatureString.
             urldecode('/test');
-        $expectedSignature = hash_hmac('sha256', $template, 'secret' . 'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
+        $expectedSignature = hash_hmac('sha256', $template, 'secret'.'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
 
         $this->assertEquals($expectedSignature, $signature);
         $this->assertEquals(64, strlen($signature), 'Signature should be a 64-character SHA-256 hash');
@@ -101,8 +101,8 @@ class SignatureGeneratorTest extends TestCase
 
         // Exact template computation
         $signatureString = 'key=value&key2=value2';
-        $template = 'POST' . '/api/test' . 'client-id' . '16987776001' . $signatureString . 'com.test.app';
-        $expectedSignature = hash_hmac('sha256', $template, 'secret' . 'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
+        $template = 'POST'.'/api/test'.'client-id'.'16987776001'.$signatureString.'com.test.app';
+        $expectedSignature = hash_hmac('sha256', $template, 'secret'.'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
 
         $this->assertEquals($expectedSignature, $signature);
         $this->assertEquals(64, strlen($signature), 'Signature should be a 64-character SHA-256 hash');
@@ -121,15 +121,15 @@ class SignatureGeneratorTest extends TestCase
         $signature = $this->signatureGenerator->generate($clientId, $authVersion, $timestamp, $method, $path, $params);
 
         // Expected signature with no params
-        $template = urldecode('com.test.app') .
-            '1698777600' .
-            'client-id' .
-            'RSA2048' .
-            '1' .
-            'GET' .
-            '' . // Empty signature string
+        $template = urldecode('com.test.app').
+            '1698777600'.
+            'client-id'.
+            'RSA2048'.
+            '1'.
+            'GET'.
+            ''. // Empty signature string
             urldecode('/empty');
-        $expectedSignature = hash_hmac('sha256', $template, 'secret' . 'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
+        $expectedSignature = hash_hmac('sha256', $template, 'secret'.'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ');
 
         $this->assertEquals($expectedSignature, $signature);
     }
