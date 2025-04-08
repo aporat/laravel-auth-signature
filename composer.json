@@ -1,6 +1,6 @@
 {
     "name": "aporat/laravel-auth-signature",
-    "description": "",
+    "description": "A Laravel package providing a middleware for validating API requests with HMAC-SHA256 signatures",
     "type": "library",
     "license": "MIT",
     "homepage": "https://github.com/aporat/laravel-auth-signature",
@@ -22,8 +22,7 @@
         "php": "^8.3",
         "ext-json": "*",
         "illuminate/support": "^10.0 || ^11.0 || ^12.0",
-        "illuminate/log": "^10.0 || ^11.0 || ^12.0",
-        "aporat/laravel-filter-var": "dev-main"
+        "aporat/laravel-filter-var": "^3.0"
     },
     "require-dev": {
         "orchestra/testbench": "^10.0",

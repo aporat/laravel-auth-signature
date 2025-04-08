@@ -2,6 +2,8 @@
 
 namespace Aporat\AuthSignature;
 
+use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
+
 class SignatureGenerator
 {
     protected array $config;
@@ -64,9 +66,12 @@ class SignatureGenerator
         // Assemble the template based on the configured order
         $template = '';
         foreach ($templateOrder as $key) {
-            if (isset($components[$key])) {
-                $template .= $components[$key];
+
+            if (! isset($components[$key])) {
+                throw new InvalidConfigurationException("Invalid signature template key '$key' for auth version '$authVersion'.");
             }
+
+            $template .= $components[$key];
         }
 
         return hash_hmac('sha256', $template, $clientSecret);
