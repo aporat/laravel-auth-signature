@@ -5,7 +5,7 @@ namespace Aporat\AuthSignature\Tests;
 use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
 use Aporat\AuthSignature\Exceptions\SignatureException;
 use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
-use Aporat\FilterVar\Laravel\FilterVarServiceProvider;
+use Aporat\FilterVar\FilterVarServiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Orchestra\Testbench\TestCase;

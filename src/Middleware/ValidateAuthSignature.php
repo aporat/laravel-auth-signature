@@ -5,7 +5,7 @@ namespace Aporat\AuthSignature\Middleware;
 use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
 use Aporat\AuthSignature\Exceptions\SignatureException;
 use Aporat\AuthSignature\SignatureGenerator;
-use Aporat\FilterVar\Laravel\Facades\FilterVar;
+use Aporat\FilterVar\Facades\FilterVar;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -13,8 +13,14 @@ class ValidateAuthSignature
 {
     protected SignatureGenerator $signatureGenerator;
 
+    /**
+     * @var array<string, mixed>
+     */
     protected array $config;
 
+    /**
+     * @param  array<string, mixed>  $config
+     */
     public function __construct(array $config)
     {
 

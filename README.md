@@ -26,14 +26,14 @@ The service provider (`AuthSignatureServiceProvider`) is automatically registere
 ```php
 'providers' => [
 // ...
-  Aporat\\AuthSignature\\Laravel\\AuthSignatureServiceProvider::class,
+  Aporat\\AuthSignature\\AuthSignatureServiceProvider::class,
 ],
 ```
 
 Publish the configuration file:
 
 ```bash
-php artisan vendor:publish --provider="Aporat\\AuthSignature\\Laravel\\AuthSignatureServiceProvider" --tag="config"
+php artisan vendor:publish --provider="Aporat\\AuthSignature\\AuthSignatureServiceProvider" --tag="config"
 ```
 
 This copies `auth-signature.php` to your `config/` directory.

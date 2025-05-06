@@ -6,13 +6,22 @@ use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
 
 class SignatureGenerator
 {
+    /**
+     * @var array <string, mixed>
+     */
     protected array $config;
 
+    /**
+     * @param  array<string, mixed>  $config
+     */
     public function __construct(array $config)
     {
         $this->config = $config;
     }
 
+    /**
+     * @param  array<string, mixed>  $params
+     */
     public function generate(string $clientId, int $authVersion, int $timestamp, string $method, string $path, array $params): string
     {
         ksort($params);

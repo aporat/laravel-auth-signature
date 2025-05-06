@@ -2,10 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Aporat\AuthSignature\Laravel;
+namespace Aporat\AuthSignature;
 
 use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
-use Aporat\AuthSignature\SignatureGenerator;
 use Illuminate\Contracts\Support\DeferrableProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,7 +21,7 @@ class AuthSignatureServiceProvider extends ServiceProvider implements Deferrable
      *
      * @var string
      */
-    private const string CONFIG_PATH = __DIR__.'/../../config/auth-signature.php';
+    private const string CONFIG_PATH = __DIR__.'/../config/auth-signature.php';
 
     /**
      * Bootstrap application services and publish configuration.
