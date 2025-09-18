@@ -8,103 +8,138 @@ use Aporat\AuthSignature\SignatureGenerator;
 use Aporat\FilterVar\Facades\FilterVar;
 use Closure;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class ValidateAuthSignature
 {
-    protected SignatureGenerator $signatureGenerator;
-
-    /**
-     * @var array<string, mixed>
-     */
-    protected array $config;
+    public SignatureGenerator $signatureGenerator;
 
     /**
      * @param  array<string, mixed>  $config
      */
-    public function __construct(array $config)
-    {
-
-        if (empty($config['clients']) || ! is_array($config['clients'])) {
-            throw new InvalidConfigurationException('Configuration must include a "clients" array.');
-        }
-        if (empty($config['auth_versions']) || ! is_array($config['auth_versions'])) {
-            throw new InvalidConfigurationException('Configuration must include an "auth_versions" array.');
-        }
-
-        // Validate each client
-        foreach ($config['clients'] as $clientId => $settings) {
-            if (! isset($settings['client_secret']) || ! is_string($settings['client_secret'])) {
-                throw new InvalidConfigurationException("Client '$clientId' must have a 'client_secret' string.");
-            }
-            if (! isset($settings['bundle_id']) || ! is_string($settings['bundle_id'])) {
-                throw new InvalidConfigurationException("Client '$clientId' must have a 'bundle_id' string.");
-            }
-        }
-
-        $this->config = $config;
+    public function __construct(
+        public array $config,
+        public int $timestampTolerance = 300
+    ) {
+        $this->validateConfig($config);
         $this->signatureGenerator = new SignatureGenerator($config);
+        $this->timestampTolerance = $config['timestamp_tolerance_seconds'] ?? $this->timestampTolerance;
     }
 
     /**
+     * Handle an incoming request.
+     *
      * @throws SignatureException
      */
-    public function handle(Request $request, Closure $next): mixed
+    public function handle(Request $request, Closure $next): Response
     {
-        $authVersion = FilterVar::filterValue('cast:int', $request->header('X-Auth-Version'));
-        $timestamp = FilterVar::filterValue('cast:int', $request->header('X-Auth-Timestamp'));
-        $clientId = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Client-ID'));
-        $authSignature = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Signature'));
+        $headers = $this->extractAuthHeaders($request);
+        $this->validateTimestamp($headers['timestamp']);
+        $this->validateClientRules($headers['clientId'], $headers['authVersion']);
 
-        if ($authVersion === null || $authVersion === false) {
-            throw new SignatureException('Invalid or missing X-Auth-Version header.');
-        }
-        if ($timestamp === null || $timestamp === false) {
-            throw new SignatureException('Invalid or missing X-Auth-Timestamp header.');
-        }
-        if (empty($clientId)) {
-            throw new SignatureException('Invalid or missing X-Auth-Client-ID header.');
-        }
-        if (empty($authSignature)) {
-            throw new SignatureException('Invalid or missing X-Auth-Signature header.');
-        }
+        $expectedSignature = $this->signatureGenerator->generate(
+            $headers['clientId'],
+            $headers['authVersion'],
+            $headers['timestamp'],
+            $request->method(),
+            $request->getPathInfo(),
+            $request->all()
+        );
 
-        if ($timestamp <= time() - (60 * 60 * 24 * 2) || $timestamp >= time() + 60 * 60 * 24 * 2) {
-            throw new SignatureException('Please update your date & time on your device');
-        }
-
-        if (! isset($this->config['clients'][$clientId])) {
-            throw new InvalidConfigurationException("No settings found for client '$clientId'.");
-        }
-
-        if (strlen($authSignature) != 64) {
-            throw new SignatureException('You are currently running an older version of the app. Please update your application to continue.');
-        }
-
-        $method = $request->method();
-        $path = $request->getPathInfo();
-        $params = $request->all();
-
-        $clientSettings = $this->config['clients'][$clientId];
-
-        $checksum = $this->signatureGenerator->generate($clientId, $authVersion, $timestamp, $method, $path, $params);
-
-        // ignore empty POST requests
-        if ($checksum != $authSignature && $request->getMethod() == 'POST' && empty($request->getContent())) {
-            return response()->json();
-        }
-
-        if ($checksum != $authSignature && $request->getMethod() == 'POST' && $request->getContent() == '{}') {
-            return response()->json();
-        }
-
-        if ($authVersion < $clientSettings['min_auth_level']) {
-            throw new SignatureException('You are currently running an older version of the app. Please update your application to continue.');
-        }
-
-        if ($checksum != $authSignature) {
-            throw new SignatureException('You are currently running an older version of the app. Please update your application to continue.');
+        if (! hash_equals($expectedSignature, $headers['authSignature'])) {
+            throw SignatureException::signatureMismatch();
         }
 
         return $next($request);
+    }
+
+    /**
+     * Extracts and performs initial validation on authentication headers.
+     *
+     * @return array{authVersion: int, timestamp: int, clientId: string, authSignature: string}
+     *
+     * @throws SignatureException
+     */
+    private function extractAuthHeaders(Request $request): array
+    {
+        $authVersion = FilterVar::filterValue('cast:int', $request->header('X-Auth-Version'));
+        if ($authVersion === null || $authVersion === false) {
+            throw SignatureException::missingHeader('X-Auth-Version');
+        }
+
+        $timestamp = FilterVar::filterValue('cast:int', $request->header('X-Auth-Timestamp'));
+        if ($timestamp === null || $timestamp === false) {
+            throw SignatureException::missingHeader('X-Auth-Timestamp');
+        }
+
+        $clientId = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Client-ID'));
+        if (empty($clientId)) {
+            throw SignatureException::missingHeader('X-Auth-Client-ID');
+        }
+
+        $authSignature = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Signature'));
+        if (empty($authSignature) || strlen($authSignature) !== 64) {
+            throw SignatureException::missingHeader('X-Auth-Signature');
+        }
+
+        return compact('authVersion', 'timestamp', 'clientId', 'authSignature');
+    }
+
+    /**
+     * Validates that the timestamp is within the allowed tolerance window.
+     *
+     * @throws SignatureException
+     */
+    private function validateTimestamp(int $timestamp): void
+    {
+        $currentTime = time();
+        if ($timestamp < ($currentTime - $this->timestampTolerance) || $timestamp > ($currentTime + $this->timestampTolerance)) {
+            throw SignatureException::timestampExpired();
+        }
+    }
+
+    /**
+     * Validates rules specific to the client, like minimum auth version.
+     *
+     * @throws SignatureException
+     */
+    private function validateClientRules(string $clientId, int $authVersion): void
+    {
+        $clientSettings = $this->config['clients'][$clientId] ?? null;
+
+        if ($clientSettings === null) {
+            throw InvalidConfigurationException::clientNotFound($clientId);
+        }
+
+        $minAuthLevel = $clientSettings['min_auth_level'] ?? 0;
+        if ($authVersion < $minAuthLevel) {
+            throw SignatureException::upgradeRequired();
+        }
+    }
+
+    /**
+     * Validates the structure of the configuration array upon instantiation.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function validateConfig(array $config): void
+    {
+        if (empty($config['clients']) || ! is_array($config['clients'])) {
+            throw InvalidConfigurationException::missingClientsArray();
+        }
+
+        if (empty($config['auth_versions']) || ! is_array($config['auth_versions'])) {
+            throw InvalidConfigurationException::missingAuthVersionsArray();
+        }
+
+        foreach ($config['clients'] as $clientId => $settings) {
+            if (empty($settings['client_secret']) || ! is_string($settings['client_secret'])) {
+                throw InvalidConfigurationException::missingClientSecret($clientId);
+            }
+            // You may want to add a corresponding static method for this exception as well.
+            if (empty($settings['bundle_id']) || ! is_string($settings['bundle_id'])) {
+                throw new InvalidConfigurationException("Client '{$clientId}' must have a 'bundle_id' string.");
+            }
+        }
     }
 }

@@ -5,7 +5,9 @@ namespace Aporat\AuthSignature\Tests;
 use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
 use Aporat\AuthSignature\Exceptions\SignatureException;
 use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
+use Aporat\AuthSignature\SignatureGenerator;
 use Aporat\FilterVar\FilterVarServiceProvider;
+use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Orchestra\Testbench\TestCase;
@@ -13,13 +15,23 @@ use PHPUnit\Framework\Attributes\Test;
 
 class MiddlewareValidateAuthSignatureTest extends TestCase
 {
-    protected array $config;
+    private array $config;
+
+    private SignatureGenerator $generator;
 
     protected function getPackageProviders($app): array
     {
-        return [
-            FilterVarServiceProvider::class,
-        ];
+        return [FilterVarServiceProvider::class];
+    }
+
+    /**
+     * Get the default application bootstrap file.
+     *
+     * @param  Application  $app
+     */
+    protected function getDefaultApplicationBootstrapFile($app): ?string
+    {
+        return null;
     }
 
     protected function setUp(): void
@@ -27,156 +39,112 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
         parent::setUp();
 
         $this->config = [
+            'timestamp_tolerance_seconds' => 60,
             'clients' => [
-                'client-id' => [
-                    'client_secret' => 'secret',
-                    'bundle_id' => 'com.test.app',
-                    'min_auth_level' => 2,
+                'test-client' => [
+                    'client_secret' => 'test-secret',
+                    'bundle_id' => 'com.example.app',
+                    'min_auth_level' => 10,
                 ],
             ],
             'auth_versions' => [
-                1 => [
-                    'secret' => 'oQqx4teM9Kaf0EZUeSuqreNzHOTz1rXZ',
-                    'state' => 'RSA2048',
-                    'signature_template' => [
-                        'bundle_id',
-                        'timestamp',
-                        'client_id',
-                        'state',
-                        'auth_version',
-                        'method',
-                        'signature',
-                        'path',
-                    ],
-                ],
+                10 => ['secret' => 'v10-secret', 'state' => 'v10-state'],
             ],
         ];
+
+        $this->generator = new SignatureGenerator($this->config);
     }
 
     #[Test]
-    public function it_passes_with_valid_signature(): void
+    public function it_allows_a_valid_request_to_pass(): void
     {
-        $timestamp = time();
-        $clientId = 'client-id';
-        $authVersion = 2; // Above min_auth_level
-        $method = 'GET';
-        $path = '/test';
-        $params = ['key' => 'value'];
-
-        $request = Request::create($path, $method, $params);
-        $request->headers->set('X-Auth-Version', (string) $authVersion);
-        $request->headers->set('X-App-Name', 'test-app');
-        $request->headers->set('X-Auth-Timestamp', (string) $timestamp);
-        $request->headers->set('X-Auth-Client-ID', $clientId);
-        $request->headers->set('User-Agent', "App (iOS; $authVersion; $clientId)");
-
-        $signatureGenerator = new \Aporat\AuthSignature\SignatureGenerator($this->config);
-        $expectedSignature = $signatureGenerator->generate($clientId, $authVersion, $timestamp, $method, $path, $params);
-        $request->headers->set('X-Auth-Signature', $expectedSignature);
-
+        $request = $this->createSignedRequest();
         $middleware = new ValidateAuthSignature($this->config);
-        $response = $middleware->handle($request, fn ($req) => new Response('OK'));
-
-        $this->assertEquals(200, $response->getStatusCode());
-        $this->assertEquals('OK', $response->getContent());
+        $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     #[Test]
-    public function it_throws_exception_for_missing_client(): void
+    public function it_rejects_request_with_unknown_client_id(): void
     {
-        $this->expectException(InvalidConfigurationException::class);
-        $this->expectExceptionMessage("No settings found for client 'unknown-client'");
-
-        $timestamp = time();
-        $clientId = 'unknown-client';
-        $authVersion = 1;
-        $method = 'GET';
-        $path = '/test';
-        $params = ['key' => 'value'];
-
-        $request = Request::create($path, $method, $params);
-        $request->headers->set('X-Auth-Version', (string) $authVersion);
-        $request->headers->set('X-App-Name', 'test-app');
-        $request->headers->set('X-Auth-Timestamp', (string) $timestamp);
-        $request->headers->set('X-Auth-Client-ID', $clientId);
-        $request->headers->set('X-Auth-Signature', 'dummy-signature');
-
+        $request = $this->createSignedRequest(['X-Auth-Client-ID' => 'unknown-client']);
         $middleware = new ValidateAuthSignature($this->config);
-        $middleware->handle($request, fn ($req) => new Response('OK'));
+        $expectedMessage = "Configuration for client ID 'unknown-client' not found.";
+
+        try {
+            $middleware->handle($request, fn ($req) => new Response);
+            $this->fail('Expected InvalidConfigurationException was not thrown.');
+        } catch (InvalidConfigurationException $e) {
+            $this->assertSame($expectedMessage, $e->getMessage());
+        }
     }
 
     #[Test]
-    public function it_throws_exception_for_invalid_timestamp(): void
+    public function it_rejects_request_with_old_timestamp(): void
     {
+        $request = $this->createSignedRequest(['X-Auth-Timestamp' => time() - 100]);
+        $middleware = new ValidateAuthSignature($this->config);
+
         $this->expectException(SignatureException::class);
-        $this->expectExceptionMessage('Please update your date & time on your device');
+        $this->expectExceptionMessage('Request timestamp is out of date.');
 
-        $timestamp = time() - (60 * 60 * 24 * 3); // 3 days ago
-        $clientId = 'client-id';
-        $authVersion = 2;
-        $method = 'GET';
-        $path = '/test';
-        $params = ['key' => 'value'];
-
-        $request = Request::create($path, $method, $params);
-        $request->headers->set('X-Auth-Version', (string) $authVersion);
-        $request->headers->set('X-App-Name', 'test-app');
-        $request->headers->set('X-Auth-Timestamp', (string) $timestamp);
-        $request->headers->set('X-Auth-Client-ID', $clientId);
-        $request->headers->set('X-Auth-Signature', 'dummy-signature');
-
-        $middleware = new ValidateAuthSignature($this->config);
-        $middleware->handle($request, fn ($req) => new Response('OK'));
+        $middleware->handle($request, fn ($req) => new Response);
     }
 
     #[Test]
-    public function it_throws_exception_for_invalid_signature_length(): void
+    public function it_rejects_request_with_version_below_minimum(): void
     {
-        $this->expectException(SignatureException::class);
-        $this->expectExceptionMessage('You are currently running an older version of the app. Please update your application to continue.');
-
-        $timestamp = time();
-        $clientId = 'client-id';
-        $authVersion = 2;
-        $method = 'GET';
-        $path = '/test';
-        $params = ['key' => 'value'];
-
-        $request = Request::create($path, $method, $params);
-        $request->headers->set('X-Auth-Version', (string) $authVersion);
-        $request->headers->set('X-App-Name', 'test-app');
-        $request->headers->set('X-Auth-Timestamp', (string) $timestamp);
-        $request->headers->set('X-Auth-Client-ID', $clientId);
-        $request->headers->set('X-Auth-Signature', 'short-signature'); // Less than 64 chars
-
+        $request = $this->createSignedRequest(['X-Auth-Version' => 9]);
         $middleware = new ValidateAuthSignature($this->config);
-        $middleware->handle($request, fn ($req) => new Response('OK'));
+
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessage('A newer application version is required to proceed.');
+
+        $middleware->handle($request, fn ($req) => new Response);
     }
 
     #[Test]
-    public function it_throws_exception_for_below_min_auth_level(): void
+    public function it_rejects_request_with_signature_mismatch(): void
     {
-        $this->expectException(SignatureException::class);
-        $this->expectExceptionMessage('You are currently running an older version of the app. Please update your application to continue.');
+        $request = $this->createSignedRequest(['X-Auth-Signature' => str_repeat('a', 64)]);
+        $middleware = new ValidateAuthSignature($this->config);
 
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessage('Invalid signature.');
+
+        $middleware->handle($request, fn ($req) => new Response);
+    }
+
+    private function createSignedRequest(array $headerOverrides = []): Request
+    {
+        $method = 'POST';
+        $path = '/api/test';
+        $params = ['foo' => 'bar'];
         $timestamp = time();
-        $clientId = 'client-id';
-        $authVersion = 1; // Below min_auth_level of 2
-        $method = 'GET';
-        $path = '/test';
-        $params = ['key' => 'value'];
+
+        $headers = [
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+        ];
+
+        $signature = $this->generator->generate(
+            $headers['X-Auth-Client-ID'],
+            $headers['X-Auth-Version'],
+            $headers['X-Auth-Timestamp'],
+            $method,
+            $path,
+            $params
+        );
+        $headers['X-Auth-Signature'] = $signature;
+
+        foreach ($headerOverrides as $key => $value) {
+            $headers[$key] = $value;
+        }
 
         $request = Request::create($path, $method, $params);
-        $request->headers->set('X-Auth-Version', (string) $authVersion);
-        $request->headers->set('X-App-Name', 'test-app');
-        $request->headers->set('X-Auth-Timestamp', (string) $timestamp);
-        $request->headers->set('X-Auth-Client-ID', $clientId);
+        $request->headers->add($headers);
 
-        $signatureGenerator = new \Aporat\AuthSignature\SignatureGenerator($this->config);
-        $expectedSignature = $signatureGenerator->generate($clientId, $authVersion, $timestamp, $method, $path, $params);
-        $request->headers->set('X-Auth-Signature', $expectedSignature);
-
-        $middleware = new ValidateAuthSignature($this->config);
-        $middleware->handle($request, fn ($req) => new Response('OK'));
+        return $request;
     }
 }

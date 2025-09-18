@@ -1,186 +1,183 @@
 # Laravel Auth Signature
-A Laravel package providing a middleware for validating API requests with HMAC-SHA256 signatures, featuring configurable template orders and version-specific authentication settings.
+
+A robust Laravel package providing a middleware for validating API requests with **HMAC-SHA256** signatures. It features configurable signature templates, version-specific authentication settings, and a secure, time-based validation to protect your endpoints.
 
 [![Packagist Version](https://img.shields.io/packagist/v/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
 [![Packagist Downloads](https://img.shields.io/packagist/dt/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
-[![Codecov](https://img.shields.io/codecov/c/github/aporat/laravel-auth-signature?style=flat-square)](https://codecov.io/github/aporat/laravel-auth-signature)
-[![Laravel Version](https://img.shields.io/badge/Laravel-12.x-orange.svg?style=flat-square)](https://laravel.com/docs/12.x)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/aporat/laravel-auth-signature/ci.yml?style=flat-square)
-![GitHub License](https://img.shields.io/github/license/aporat/laravel-auth-signature?style=flat-square)
+[![PHP Version](https://img.shields.io/badge/PHP-^8.3-777BB4.svg?style=flat-square)](https://php.net)
+[![Laravel Version](https://img.shields.io/badge/Laravel-10|11|12-FF2D20.svg?style=flat-square)](https://laravel.com)
+[![GitHub Actions CI](https://img.shields.io/github/actions/workflow/status/aporat/laravel-auth-signature/ci.yml?branch=main&style=flat-square)](https://github.com/aporat/laravel-auth-signature/actions)
+[![Code Coverage](https://img.shields.io/codecov/c/github/aporat/laravel-auth-signature?style=flat-square)](https://codecov.io/github/aporat/laravel-auth-signature)
+[![GitHub License](https://img.shields.io/github/license/aporat/laravel-auth-signature?style=flat-square)](LICENSE)
 
-A Laravel package for signature-based authentication, providing a middleware to validate API requests using HMAC-SHA256 signatures.
+---
 
-## Requirements
-- **PHP**: 8.4 or higher
-- **Laravel**: 10.x, 11.x, 12.x
+## ✨ Features
 
-## Installation
-Install the package via [Composer](https://getcomposer.org/):
+- **HMAC-SHA256 Validation**: Securely validates incoming API requests.
+- **Configurable Signature Templates**: Easily define the exact order and components of the string-to-be-signed.
+- **Version-Specific Rules**: Apply different secrets, states, and signature templates based on an `X-Auth-Version` header.
+- **Timestamp Validation**: Protects against replay attacks by ensuring requests are recent.
+- **Simple Middleware Integration**: Secure your routes with a single middleware alias: `auth.signature`.
+- **Clean and Modern Codebase**: Fully typed, tested, and built on modern PHP and Laravel features.
 
-```bash
-composer require aporat/laravel-auth-signature
-```
+---
 
-The service provider (`AuthSignatureServiceProvider`) is automatically registered via Laravel's package discovery. If auto-discovery is disabled, add it to `config/app.php`:
+## 📋 Requirements
 
-```php
-'providers' => [
-// ...
-  Aporat\\AuthSignature\\AuthSignatureServiceProvider::class,
-],
-```
+- **PHP**: ^8.3
+- **Laravel**: 10.x, 11.x, or 12.x
 
-Publish the configuration file:
+---
 
-```bash
-php artisan vendor:publish --provider="Aporat\\AuthSignature\\AuthSignatureServiceProvider" --tag="config"
-```
+## 🚀 Installation
 
-This copies `auth-signature.php` to your `config/` directory.
+1.  Install the package via Composer:
+    ```bash
+    composer require aporat/laravel-auth-signature
+    ```
 
-## Configuration
+2.  Publish the configuration file. The service provider is auto-discovered.
+    ```bash
+    php artisan vendor:publish --provider="Aporat\AuthSignature\AuthSignatureServiceProvider" --tag="config"
+    ```
+    This will create a new configuration file at `config/auth-signature.php`.
 
-Edit `config/auth-signature.php` to define your clients and auth versions:
+---
+
+## 🔧 Configuration
+
+Edit `config/auth-signature.php` to define your clients, authentication versions, and settings.
 
 ```php
 <?php
 
 return [
+    /*
+    | Defines the time window, in seconds, for which a signature is valid.
+    | This helps prevent replay attacks. Default is 300 seconds (5 minutes).
+    */
+    'timestamp_tolerance_seconds' => 300,
+
+    /*
+    | Define each client that can make signed requests.
+    | The key is the Client ID sent in the `X-Auth-Client-ID` header.
+    */
     'clients' => [
         'your-client-id' => [
-            'client_secret' => env('AUTH_CLIENT_SECRET', 'your-secret'),
-            'bundle_id' => env('AUTH_BUNDLE_ID', 'com.your.app'),
-            'min_auth_level' => env('AUTH_MIN_LEVEL', 1),
+            // The secret key used to sign requests for this client.
+            'client_secret' => env('CLIENT_SECRET_KEY'),
+            // The bundle ID or unique identifier for the client application.
+            'bundle_id' => 'com.yourcompany.yourapp',
+            // (Optional) The minimum auth version this client must use.
+            'min_auth_level' => 10,
         ],
     ],
+
+    /*
+    | Define rules for different signature versions.
+    | This allows you to evolve your signature algorithm over time.
+    */
     'auth_versions' => [
-        1 => [
-            'secret' => env('AUTH_VERSION_SECRET', 'optional-secret'),
-            'state' => env('AUTH_STATE', 'RSA2048'),
+        10 => [
+            // (Optional) A version-specific secret appended to the client's secret.
+            'secret' => env('AUTH_V10_SECRET'),
+            // (Optional) A static string included in the signature for this version.
+            'state' => 'some_static_string_for_v10',
+            // (Optional) The exact order of components for the string-to-be-signed.
             'signature_template' => [
-                'bundle_id',
-                'timestamp',
-                'client_id',
-                'state',
-                'auth_version',
-                'method',
-                'signature',
-                'path',
+                'bundle_id', 'timestamp', 'client_id', 'state',
+                'auth_version', 'method', 'signature', 'path',
             ],
         ],
     ],
 ];
 ```
 
-Update your `.env` file with your secrets:
+Remember to add the corresponding keys to your `.env` file for security.
 
-```env
-AUTH_CLIENT_SECRET=your-secret-key
-AUTH_BUNDLE_ID=com.your.app
-AUTH_MIN_LEVEL=1
-AUTH_VERSION_SECRET=optional-version-secret
-AUTH_STATE=RSA2048
-```
+---
 
-- **`clients`**: Defines client-specific settings like `client_secret` and `bundle_id`. `min_auth_level` enforces a minimum auth version.
-- **`auth_versions`**: Configures version-specific settings, including an optional `secret` appended to `client_secret`, a `state` value, and the `signature_template` order for HMAC-SHA256 generation.
+## 🛠️ Usage
 
-## Usage
+### Applying the Middleware
 
-### Middleware
-Apply the `ValidateAuthSignature` middleware to routes using its alias:
+Apply the `auth.signature` middleware to any route or route group that requires signature validation.
 
 ```php
-// routes/api.php
-Route::get('/test', function () {
-    return response()->json(['message' => 'Validated!']);
-})->middleware('auth.signature');
+// in routes/api.php
+Route::middleware('auth.signature')->group(function () {
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+});
 ```
 
-The middleware validates requests by checking headers like `X-Auth-Signature`, `X-Auth-Version`, `X-Auth-Timestamp`, and `X-Auth-Client-ID`.
-
-### Manual Instantiation
-Resolve an instance with the config in a controller or service:
-
-```php
-use Aporat\\AuthSignature\\Middleware\\ValidateAuthSignature;
-
-$validateAuthSignature = new ValidateAuthSignature(config('auth-signature', []));
-$response = $validateAuthSignature->handle($request, fn($req) => response('Validated!'));
-```
-
-Or use dependency injection (requires binding adjustment in the service provider):
-
-```php
-use Aporat\\AuthSignature\\Middleware\\ValidateAuthSignature;
-use Illuminate\\Http\\Request;
-
-class AuthController extends Controller
-{
-    public function validateRequest(Request $request, ValidateAuthSignature $middleware)
-    {
-        return $middleware->handle($request, fn($req) => response()->json(['message' => 'Validated!']));
-    }
-}
-```
+The middleware will automatically validate incoming requests and throw a `SignatureException` (resulting in a 4xx HTTP response) if validation fails.
 
 ### Generating a Signature
-For testing, generate a signature manually:
+
+You can use the `SignatureGenerator` class to create a valid signature, which is useful for testing or for client-side implementations.
 
 ```php
-use Aporat\\AuthSignature\\SignatureGenerator;
+use Aporat\AuthSignature\SignatureGenerator;
 
-$signatureGenerator = new SignatureGenerator(config('auth-signature'));
-$signature = $signatureGenerator->generate(
-    'your-client-id',
-    1, // auth_version
-    time(), // timestamp
-    'GET',
-    '/test',
-    ['key' => 'value']
+// Resolve the generator from the container
+$generator = app(SignatureGenerator::class);
+
+$signature = $generator->generate(
+    clientId: 'your-client-id',
+    authVersion: 10,
+    timestamp: time(),
+    method: 'GET',
+    path: '/api/orders',
+    params: ['page' => 1]
 );
-echo $signature;
+
+// The output will be a 64-character HMAC-SHA256 hash
+// e.g., "b5f0029b48b61a9151528c11e74f115340f666d44a141b279d633036e88c0353"
 ```
 
-Send a request with headers:
+### Example Client Request
+
+A client would then make a request including the generated signature and other required headers.
 
 ```bash
-curl -X GET \
-  -H "X-Auth-Version: 1" \
-  -H "X-App-Name: test-app" \
-  -H "X-Auth-Timestamp: [timestamp]" \
+# Store timestamp and generate signature first
+TIMESTAMP=$(date +%s)
+SIGNATURE="..." # Generate signature using the same timestamp
+
+curl -X GET "[http://yourapp.test/api/orders?page=1](http://yourapp.test/api/orders?page=1)" \
+  -H "Content-Type: application/json" \
   -H "X-Auth-Client-ID: your-client-id" \
-  -H "X-Auth-Signature: [generated-signature]" \
-  -H "User-Agent: App (iOS; 1; your-client-id)" \
-  "http://your-app.test/test?key=value"
+  -H "X-Auth-Version: 10" \
+  -H "X-Auth-Timestamp: $TIMESTAMP" \
+  -H "X-Auth-Signature: $SIGNATURE"
 ```
 
-## Testing
-Run the package's unit tests:
+---
+
+## 🧪 Testing
+
+The package is fully tested. To run the test suite:
 
 ```bash
-vendor/bin/phpunit
+# Run all tests
+composer test
+
+# Run tests with code coverage
+composer test-ci
 ```
 
-With coverage:
+---
 
-```bash
-vendor/bin/phpunit --coverage-text --coverage-clover coverage.xml --log-junit junit.xml
-```
+## 🤝 Contributing
 
-Requires Xdebug or PCOV for coverage reports.
+Contributions are welcome! Please feel free to fork the repository, create a feature branch, and open a pull request.
 
-## Contributing
-Contributions are welcome! Please:
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/your-feature`).
-3. Commit your changes (`git commit -m 'Add your feature'`).
-4. Push to the branch (`git push origin feature/your-feature`).
-5. Open a pull request.
+## 📜 License
 
-## License
-This package is open-sourced under the [MIT License](https://opensource.org/licenses/MIT). See the [LICENSE](LICENSE) file for details.
+This package is open-source software licensed under the **[MIT License](https://opensource.org/licenses/MIT)**.
 
-## Support
-- **Issues**: [github.com/aporat/laravel-auth-signature/issues](https://github.com/aporat/laravel-auth-signature/issues)
-- **Source**: [github.com/aporat/laravel-auth-signature](https://github.com/aporat/laravel-auth-signature)
+## 💬 Support
+
+If you encounter any issues or have questions, please open an issue on the [GitHub repository](https://github.com/aporat/laravel-auth-signature/issues).
