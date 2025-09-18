@@ -24,7 +24,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.4 # Lint against the minimum required PHP version
+          php-version: 8.4
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -45,24 +45,17 @@ jobs:
   # TESTING JOB: Runs against a matrix of PHP and Laravel versions.
   ################################################################################
   tests:
-    name: "P${{ matrix.php }} | L${{ matrix.laravel }} | ${{ matrix.dependencies }}"
+    name: "P${{ matrix.php }} | L${{ matrix.laravel }}"
     needs: lint
     runs-on: ubuntu-latest
 
-    # Allow jobs running on PHP 8.5 to fail without failing the entire workflow.
     continue-on-error: ${{ matrix.php == '8.5' }}
 
     strategy:
       fail-fast: false
       matrix:
-        php: [8.4, 8.5] # Test against required (8.4) and optional (8.5) versions.
+        php: [8.4, 8.5]
         laravel: [10.*, 11.*, 12.*]
-        dependencies: [highest]
-        include:
-          # Add a job to test with the lowest dependencies on the latest stable combination.
-          - php: 8.4
-            laravel: 12.*
-            dependencies: lowest
 
     steps:
       - name: Checkout Code
@@ -79,28 +72,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor
-          key: ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-${{ matrix.dependencies }}-${{ hashFiles('**/composer.lock') }}
+          # Simplified cache key
+          key: ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
-            ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-${{ matrix.dependencies }}-
+            ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-
 
       - name: Install Dependencies
         uses: ramsey/composer-install@v3
-        with:
-          dependency-versions: ${{ matrix.dependencies }}
 
       - name: Execute tests (PHPUnit)
         run: composer test-ci
 
       - name: Upload coverage to Codecov
-        # Only upload coverage from the latest stable PHP/Laravel run.
-        if: matrix.php == '8.4' && matrix.laravel == '12.*' && matrix.dependencies == 'highest'
+        if: matrix.php == '8.4' && matrix.laravel == '12.*'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
 
       - name: Upload test results to Codecov
-        if: matrix.php == '8.4' && matrix.laravel == '12.*' && matrix.dependencies == 'highest'
+        if: matrix.php == '8.4' && matrix.laravel == '12.*'
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
