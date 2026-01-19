@@ -82,7 +82,7 @@ readonly class SignatureGenerator
             $encodedKey = rawurlencode(strtolower($key));
 
             $encodedValue = is_array($value)
-                ? rawurlencode(json_encode($value, JSON_UNESCAPED_UNICODE))
+                ? rawurlencode(json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))
                 : rawurlencode((string) $value);
 
             $signatureParts[] = "{$encodedKey}={$encodedValue}";
