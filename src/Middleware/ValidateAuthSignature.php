@@ -12,17 +12,15 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ValidateAuthSignature
 {
-    public SignatureGenerator $signatureGenerator;
-
     /**
      * @param  array<string, mixed>  $config
      */
     public function __construct(
+        public SignatureGenerator $signatureGenerator,
         public array $config,
         public int $timestampTolerance = 300
     ) {
         $this->validateConfig($config);
-        $this->signatureGenerator = new SignatureGenerator($config);
         $this->timestampTolerance = $config['timestamp_tolerance_seconds'] ?? $this->timestampTolerance;
     }
 
@@ -136,9 +134,8 @@ class ValidateAuthSignature
             if (empty($settings['client_secret']) || ! is_string($settings['client_secret'])) {
                 throw InvalidConfigurationException::missingClientSecret($clientId);
             }
-            // You may want to add a corresponding static method for this exception as well.
             if (empty($settings['bundle_id']) || ! is_string($settings['bundle_id'])) {
-                throw new InvalidConfigurationException("Client '{$clientId}' must have a 'bundle_id' string.");
+                throw InvalidConfigurationException::missingBundleId($clientId);
             }
         }
     }
