@@ -57,7 +57,10 @@ class AuthSignatureServiceProvider extends ServiceProvider implements Deferrable
         // Explicitly bind the middleware as a singleton. This ensures its dependencies
         // are resolved correctly and consistently from the container.
         $this->app->singleton(ValidateAuthSignature::class, function (Application $app) {
-            return new ValidateAuthSignature($app->make('config')->get('auth-signature'));
+            return new ValidateAuthSignature(
+                $app->make(SignatureGenerator::class),
+                $app->make('config')->get('auth-signature')
+            );
         });
     }
 

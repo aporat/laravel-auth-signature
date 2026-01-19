@@ -59,7 +59,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     public function it_allows_a_valid_request_to_pass(): void
     {
         $request = $this->createSignedRequest();
-        $middleware = new ValidateAuthSignature($this->config);
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
         $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -68,7 +68,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     public function it_rejects_request_with_unknown_client_id(): void
     {
         $request = $this->createSignedRequest(['X-Auth-Client-ID' => 'unknown-client']);
-        $middleware = new ValidateAuthSignature($this->config);
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
         $expectedMessage = "Configuration for client ID 'unknown-client' not found.";
 
         try {
@@ -83,7 +83,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     public function it_rejects_request_with_old_timestamp(): void
     {
         $request = $this->createSignedRequest(['X-Auth-Timestamp' => time() - 100]);
-        $middleware = new ValidateAuthSignature($this->config);
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
 
         $this->expectException(SignatureException::class);
         $this->expectExceptionMessage('Request timestamp is out of date.');
@@ -95,7 +95,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     public function it_rejects_request_with_version_below_minimum(): void
     {
         $request = $this->createSignedRequest(['X-Auth-Version' => 9]);
-        $middleware = new ValidateAuthSignature($this->config);
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
 
         $this->expectException(SignatureException::class);
         $this->expectExceptionMessage('A newer application version is required to proceed.');
@@ -107,7 +107,7 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     public function it_rejects_request_with_signature_mismatch(): void
     {
         $request = $this->createSignedRequest(['X-Auth-Signature' => str_repeat('a', 64)]);
-        $middleware = new ValidateAuthSignature($this->config);
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
 
         $this->expectException(SignatureException::class);
         $this->expectExceptionMessage('Invalid signature.');

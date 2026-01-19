@@ -4,7 +4,7 @@ A robust Laravel package providing a middleware for validating API requests with
 
 [![Packagist Version](https://img.shields.io/packagist/v/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
 [![Packagist Downloads](https://img.shields.io/packagist/dt/aporat/laravel-auth-signature?style=flat-square)](https://packagist.org/packages/aporat/laravel-auth-signature)
-[![PHP Version](https://img.shields.io/badge/PHP-^8.3-777BB4.svg?style=flat-square)](https://php.net)
+[![PHP Version](https://img.shields.io/badge/PHP-^8.5-777BB4.svg?style=flat-square)](https://php.net)
 [![Laravel Version](https://img.shields.io/badge/Laravel-10|11|12-FF2D20.svg?style=flat-square)](https://laravel.com)
 [![GitHub Actions CI](https://img.shields.io/github/actions/workflow/status/aporat/laravel-auth-signature/ci.yml?branch=main&style=flat-square)](https://github.com/aporat/laravel-auth-signature/actions)
 [![Code Coverage](https://img.shields.io/codecov/c/github/aporat/laravel-auth-signature?style=flat-square)](https://codecov.io/github/aporat/laravel-auth-signature)
@@ -25,7 +25,7 @@ A robust Laravel package providing a middleware for validating API requests with
 
 ## 📋 Requirements
 
-- **PHP**: ^8.3
+- **PHP**: ^8.5
 - **Laravel**: 10.x, 11.x, or 12.x
 
 ---

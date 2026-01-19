@@ -34,6 +34,14 @@ class InvalidConfigurationException extends RuntimeException
     }
 
     /**
+     * Creates an exception for a client missing its 'bundle_id'.
+     */
+    public static function missingBundleId(string $clientId): self
+    {
+        return new self("Client '{$clientId}' must have a 'bundle_id' string.");
+    }
+
+    /**
      * Creates an exception for when a client's configuration cannot be found.
      */
     public static function clientNotFound(string $clientId): self

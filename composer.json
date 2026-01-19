@@ -23,7 +23,7 @@
     }
   ],
   "require": {
-    "php": "^8.4",
+    "php": "^8.5",
     "aporat/laravel-filter-var": "^4.0",
     "illuminate/support": "^10.0 || ^11.0 || ^12.0"
   },
