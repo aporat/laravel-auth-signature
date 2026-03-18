@@ -24,7 +24,7 @@
   ],
   "require": {
     "php": "^8.4",
-    "aporat/laravel-filter-var": "^4.0",
+    "aporat/laravel-filter-var": "^5.0",
     "illuminate/support": "^12.0 || ^13.0"
   },
   "require-dev": {
