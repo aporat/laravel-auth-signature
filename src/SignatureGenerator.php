@@ -90,7 +90,7 @@ readonly class SignatureGenerator
                     }
                 }
             } elseif (is_array($value)) {
-                $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'='.rawurlencode(json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+                $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'='.rawurlencode(json_encode($this->sortKeysRecursively($value), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
             } else {
                 $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'='.$this->encodeValue($value);
             }
@@ -112,6 +112,22 @@ readonly class SignatureGenerator
         }
 
         return rawurlencode((string) $value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function sortKeysRecursively(array $data): array
+    {
+        ksort($data);
+        foreach ($data as $key => $value) {
+            if (is_array($value) && ! array_is_list($value)) {
+                $data[$key] = $this->sortKeysRecursively($value);
+            }
+        }
+
+        return $data;
     }
 
     /**
