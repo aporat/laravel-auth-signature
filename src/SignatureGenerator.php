@@ -75,20 +75,43 @@ readonly class SignatureGenerator
      */
     private function buildCanonicalParameters(array $params): string
     {
-        ksort($params);
+        $entries = [];
 
-        $signatureParts = [];
         foreach ($params as $key => $value) {
-            $encodedKey = rawurlencode(strtolower($key));
+            $lowercasedKey = strtolower((string) $key);
 
-            $encodedValue = is_array($value)
-                ? rawurlencode(json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))
-                : rawurlencode((string) $value);
-
-            $signatureParts[] = "{$encodedKey}={$encodedValue}";
+            if (is_array($value) && array_is_list($value)) {
+                if (empty($value)) {
+                    $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'=';
+                } else {
+                    foreach ($value as $index => $element) {
+                        $expandedKey = $lowercasedKey.'['.$index.']';
+                        $entries[$expandedKey] = rawurlencode($expandedKey).'='.$this->encodeValue($element);
+                    }
+                }
+            } elseif (is_array($value)) {
+                $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'='.rawurlencode(json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            } else {
+                $entries[$lowercasedKey] = rawurlencode($lowercasedKey).'='.$this->encodeValue($value);
+            }
         }
 
-        return implode('&', $signatureParts);
+        ksort($entries);
+
+        return implode('&', $entries);
+    }
+
+    private function encodeValue(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        return rawurlencode((string) $value);
     }
 
     /**
