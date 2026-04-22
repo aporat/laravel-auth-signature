@@ -35,13 +35,17 @@ class ValidateAuthSignature
         $this->validateTimestamp($headers['timestamp']);
         $this->validateClientRules($headers['clientId'], $headers['authVersion']);
 
+        $params = $request->isJson()
+            ? (json_decode($request->getContent(), true) ?? [])
+            : $request->all();
+
         $expectedSignature = $this->signatureGenerator->generate(
             $headers['clientId'],
             $headers['authVersion'],
             $headers['timestamp'],
             $request->method(),
             $request->getPathInfo(),
-            $request->all()
+            $params
         );
 
         if (! hash_equals($expectedSignature, $headers['authSignature'])) {
