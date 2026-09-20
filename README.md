@@ -133,13 +133,26 @@ follows:
    order — `tags[10]` therefore follows `tags[9]`, and `a[0]` precedes `a2`.
    Expansion is recursive, and an empty list encodes as `key=`.
 
-The parameter set is `$request->input()`: the JSON body on a JSON request, the
-form body otherwise, and in both cases the **query string** is included. Query
-parameters are readable through `$request->input()` regardless of content type,
-so leaving them out of the signature would let anyone append parameters to a
-captured request without invalidating it. Uploaded files are *not* signed —
-their temporary paths differ on every request — so a multipart upload signs
-only its text fields.
+The parameter set is read **off the wire**: the raw request body (JSON decoded
+on a JSON request, `parse_str` on a form-urlencoded one) unioned with the raw
+query string, with the body winning a key collision.
+
+It is deliberately *not* `$request->input()`. Laravel's `TrimStrings` and
+`ConvertEmptyStringsToNull` are global middleware, so they rewrite the parsed
+bags before any route middleware — including this one — runs. Verifying against
+those rewritten values means a client that legitimately signs `name=Rabi%20`
+gets checked against `name=Rabi`, and every request carrying leading or
+trailing whitespace in a string field is rejected with a mismatch the client
+cannot see or fix. Reading the raw request leaves both transforms in place for
+the application behind the middleware.
+
+The **query string** is included because query parameters are readable through
+`$request->input()` regardless of content type, so leaving them out would let
+anyone append parameters to a captured request without invalidating it.
+Uploaded files are *not* signed — their temporary paths differ on every
+request — so a multipart upload signs only its text fields, which are read from
+the parsed bag because PHP consumes a multipart body before `php://input` can
+be read.
 
 The `path` component is the percent-decoded path (`rawurldecode`, which leaves a
 literal `+` alone), and `bundle_id` is taken from the client's configuration

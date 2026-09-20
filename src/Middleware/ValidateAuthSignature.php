@@ -18,7 +18,11 @@ use function hash_equals;
 use function is_array;
 use function is_int;
 use function is_string;
+use function json_decode;
+use function parse_str;
+use function str_contains;
 use function strlen;
+use function strtolower;
 use function time;
 
 /**
@@ -108,23 +112,93 @@ class ValidateAuthSignature
     }
 
     /**
-     * The parameter set covered by the signature.
+     * The parameter set covered by the signature, read off the wire rather than
+     * out of the parsed request.
      *
-     * `input()` is deliberate: it reads the JSON body for JSON requests and the
-     * form body otherwise, and in both cases unions in the query string. Using
-     * `all()` instead would leave query parameters unsigned on a JSON request —
-     * they stay readable through `$request->input()`, so an attacker could
-     * append arbitrary parameters to a captured request without breaking its
-     * signature — and would fold in `UploadedFile` objects, whose temporary
-     * paths differ on every request and can therefore never be signed.
+     * `$request->input()` looks like the natural source, but it returns the
+     * bags *after* Laravel's global `TrimStrings` and
+     * `ConvertEmptyStringsToNull` middleware have rewritten them, and global
+     * middleware runs ahead of every route middleware including this one. A
+     * client that signs `name=Rabi%20` is then checked against `name=Rabi`, so
+     * any request with leading or trailing whitespace in a string field fails
+     * with a mismatch the client cannot see, reproduce, or fix. Reading the raw
+     * body and the raw query string compares against exactly what was signed
+     * and leaves those transforms in place for the application behind us.
+     *
+     * The body and the query string are both covered. Query parameters stay
+     * readable through `$request->input()` whatever the content type, so
+     * leaving them out would let an attacker append arbitrary parameters to a
+     * captured request without breaking its signature. Uploaded files are still
+     * excluded — their temporary paths differ on every request and can
+     * therefore never be signed.
      *
      * @return array<array-key, mixed>
      */
     private function signedParameters(Request $request): array
     {
-        $params = $request->input();
+        // Body first on a key collision, the way `input()` resolves one.
+        return $this->rawBodyParameters($request) + $this->rawQueryParameters($request);
+    }
 
-        return is_array($params) ? $params : [];
+    /**
+     * The request body as the client sent it.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function rawBodyParameters(Request $request): array
+    {
+        // Symfony caches the body on the first `getContent()` call — which
+        // Laravel has already made to fill the JSON bag — so this is the
+        // original payload, not a re-read of an exhausted stream. The transforms
+        // rewrite the bag they parsed out of it, never the cached string.
+        $content = $request->getContent();
+
+        if ($request->isJson()) {
+            $decoded = $content === '' ? null : json_decode($content, true);
+
+            // A body something else has already consumed leaves nothing to
+            // re-read. Falling back to the parsed bag keeps such a request
+            // verifiable rather than failing every one of them outright.
+            return is_array($decoded) ? $decoded : $request->json()->all();
+        }
+
+        if ($content !== '' && $this->isFormUrlEncoded($request)) {
+            parse_str($content, $parsed);
+
+            return $parsed;
+        }
+
+        // Multipart bodies are consumed by PHP before any of this runs, so
+        // `php://input` is empty and the parsed bag is all there is.
+        return $request->request->all();
+    }
+
+    /**
+     * The query string as the client sent it.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function rawQueryParameters(Request $request): array
+    {
+        $queryString = $request->server->get('QUERY_STRING');
+
+        // Either there were no query parameters, or the request was built in
+        // memory without one. The bag answers both cases.
+        if (! is_string($queryString) || $queryString === '') {
+            return $request->query->all();
+        }
+
+        parse_str($queryString, $parsed);
+
+        return $parsed;
+    }
+
+    private function isFormUrlEncoded(Request $request): bool
+    {
+        $contentType = $request->headers->get('CONTENT_TYPE');
+
+        return is_string($contentType)
+            && str_contains(strtolower($contentType), 'application/x-www-form-urlencoded');
     }
 
     /**
