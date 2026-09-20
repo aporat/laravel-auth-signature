@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Aporat\AuthSignature\Exceptions;
 
 use Exception;
@@ -28,6 +30,18 @@ class SignatureException extends Exception
     {
         // 408 Request Timeout: The server did not receive a complete request in time.
         return new self('Request timestamp is out of date.', 408);
+    }
+
+    /**
+     * Creates an exception for a client id that is not configured.
+     *
+     * Anyone can send any value in `X-Auth-Client-ID`, so an unrecognised one is
+     * a client error — it must not escape as a configuration error and a 500.
+     */
+    public static function unknownClient(): self
+    {
+        // 401 Unauthorized: the caller is not a client we know how to verify.
+        return new self('Invalid signature.', 401);
     }
 
     /**

@@ -114,6 +114,37 @@ Route::middleware('auth.signature')->group(function () {
 
 The middleware will automatically validate incoming requests and throw a `SignatureException` (resulting in a 4xx HTTP response) if validation fails.
 
+### What the signature covers
+
+The signature is an HMAC-SHA256 over the concatenation (no separator) of the
+components named by the auth version's `signature_template`. The `signature`
+component is the *canonical parameter string*, built from the request as
+follows:
+
+1. Parameter keys are lowercased.
+2. Keys are sorted as **plain strings** (so `"10"` sorts before `"9"`).
+3. Each key/value pair is encoded as `rawurlencode(key)=value`, and the pairs
+   are joined with `&`.
+4. Values encode as: `null` → empty, `true`/`false` → `1`/`0`, integers
+   verbatim, floats keeping their zero fraction (`1.0`, not `1`), objects as
+   compact JSON with recursively sorted keys, and everything else
+   percent-encoded with `rawurlencode`.
+5. List values expand to `key[0]`, `key[1]`, … **after** the sort, in list
+   order — `tags[10]` therefore follows `tags[9]`, and `a[0]` precedes `a2`.
+   Expansion is recursive, and an empty list encodes as `key=`.
+
+The parameter set is `$request->input()`: the JSON body on a JSON request, the
+form body otherwise, and in both cases the **query string** is included. Query
+parameters are readable through `$request->input()` regardless of content type,
+so leaving them out of the signature would let anyone append parameters to a
+captured request without invalidating it. Uploaded files are *not* signed —
+their temporary paths differ on every request — so a multipart upload signs
+only its text fields.
+
+The `path` component is the percent-decoded path (`rawurldecode`, which leaves a
+literal `+` alone), and `bundle_id` is taken from the client's configuration
+verbatim.
+
 ### Generating a Signature
 
 You can use the `SignatureGenerator` class to create a valid signature, which is useful for testing or for client-side implementations.

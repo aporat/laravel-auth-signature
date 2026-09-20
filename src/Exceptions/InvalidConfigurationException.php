@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Aporat\AuthSignature\Exceptions;
 
 use RuntimeException;
@@ -55,6 +57,23 @@ class InvalidConfigurationException extends RuntimeException
     public static function authVersionNotFound(int $authVersion): self
     {
         return new self("Configuration for auth version '{$authVersion}' not found.");
+    }
+
+    /**
+     * Creates an exception for a timestamp tolerance that is not a
+     * non-negative integer number of seconds.
+     */
+    public static function invalidTimestampTolerance(): self
+    {
+        return new self('Configuration value "timestamp_tolerance_seconds" must be a non-negative integer.');
+    }
+
+    /**
+     * Creates an exception for a signature template that is missing or empty.
+     */
+    public static function invalidTemplate(int $authVersion): self
+    {
+        return new self("Signature template for auth version '{$authVersion}' must be a non-empty array.");
     }
 
     /**

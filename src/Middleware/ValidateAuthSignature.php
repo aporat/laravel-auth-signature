@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Aporat\AuthSignature\Middleware;
 
 use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
@@ -10,18 +12,71 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+use function abs;
+use function ctype_xdigit;
+use function hash_equals;
+use function is_array;
+use function is_int;
+use function is_string;
+use function strlen;
+use function time;
+
+/**
+ * Rejects requests whose HMAC-SHA256 signature headers are missing, stale, or
+ * do not match the signature computed from the request itself.
+ */
 class ValidateAuthSignature
 {
     /**
+     * Length of the hex-encoded SHA-256 signature carried by `X-Auth-Signature`.
+     */
+    private const int SIGNATURE_LENGTH = 64;
+
+    /**
+     * Fallback clock-skew window, in seconds, when the config does not set one.
+     */
+    private const int DEFAULT_TIMESTAMP_TOLERANCE = 300;
+
+    /**
+     * Clock-skew window, in seconds, either side of the server's current time.
+     */
+    private readonly int $timestampTolerance;
+
+    /**
+     * Per-client settings, keyed by client id.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    private readonly array $clients;
+
+    /**
+     * Per-auth-version settings, keyed by version number.
+     *
+     * @var array<int|string, array<string, mixed>>
+     */
+    private readonly array $authVersions;
+
+    /**
      * @param  array<string, mixed>  $config
+     *
+     * @throws InvalidConfigurationException
      */
     public function __construct(
-        public SignatureGenerator $signatureGenerator,
-        public array $config,
-        public int $timestampTolerance = 300
+        private readonly SignatureGenerator $signatureGenerator,
+        array $config,
     ) {
         $this->validateConfig($config);
-        $this->timestampTolerance = $config['timestamp_tolerance_seconds'] ?? $this->timestampTolerance;
+
+        $this->clients = $config['clients'];
+        $this->authVersions = $config['auth_versions'];
+
+        $tolerance = $config['timestamp_tolerance_seconds'] ?? self::DEFAULT_TIMESTAMP_TOLERANCE;
+
+        if (! is_int($tolerance) || $tolerance < 0) {
+            throw InvalidConfigurationException::invalidTimestampTolerance();
+        }
+
+        $this->timestampTolerance = $tolerance;
     }
 
     /**
@@ -32,12 +87,9 @@ class ValidateAuthSignature
     public function handle(Request $request, Closure $next): Response
     {
         $headers = $this->extractAuthHeaders($request);
+
         $this->validateTimestamp($headers['timestamp']);
         $this->validateClientRules($headers['clientId'], $headers['authVersion']);
-
-        $params = $request->isJson()
-            ? (json_decode($request->getContent(), true) ?? [])
-            : $request->all();
 
         $expectedSignature = $this->signatureGenerator->generate(
             $headers['clientId'],
@@ -45,7 +97,7 @@ class ValidateAuthSignature
             $headers['timestamp'],
             $request->method(),
             $request->getPathInfo(),
-            $params
+            $this->signedParameters($request)
         );
 
         if (! hash_equals($expectedSignature, $headers['authSignature'])) {
@@ -53,6 +105,26 @@ class ValidateAuthSignature
         }
 
         return $next($request);
+    }
+
+    /**
+     * The parameter set covered by the signature.
+     *
+     * `input()` is deliberate: it reads the JSON body for JSON requests and the
+     * form body otherwise, and in both cases unions in the query string. Using
+     * `all()` instead would leave query parameters unsigned on a JSON request —
+     * they stay readable through `$request->input()`, so an attacker could
+     * append arbitrary parameters to a captured request without breaking its
+     * signature — and would fold in `UploadedFile` objects, whose temporary
+     * paths differ on every request and can therefore never be signed.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function signedParameters(Request $request): array
+    {
+        $params = $request->input();
+
+        return is_array($params) ? $params : [];
     }
 
     /**
@@ -64,27 +136,44 @@ class ValidateAuthSignature
      */
     private function extractAuthHeaders(Request $request): array
     {
-        $authVersion = FilterVar::filterValue('cast:int', $request->header('X-Auth-Version'));
-        if ($authVersion === null || $authVersion === false) {
+        // `cast:int` turns an absent header into 0, so the raw header has to be
+        // checked for presence separately — otherwise a request with no
+        // timestamp at all reports as "expired" rather than as malformed.
+        $authVersion = FilterVar::filterValue('cast:int', $this->requireHeader($request, 'X-Auth-Version'));
+        if (! is_int($authVersion) || $authVersion <= 0) {
             throw SignatureException::missingHeader('X-Auth-Version');
         }
 
-        $timestamp = FilterVar::filterValue('cast:int', $request->header('X-Auth-Timestamp'));
-        if ($timestamp === null || $timestamp === false) {
+        $timestamp = FilterVar::filterValue('cast:int', $this->requireHeader($request, 'X-Auth-Timestamp'));
+        if (! is_int($timestamp) || $timestamp <= 0) {
             throw SignatureException::missingHeader('X-Auth-Timestamp');
         }
 
         $clientId = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Client-ID'));
-        if (empty($clientId)) {
+        if (! is_string($clientId) || $clientId === '') {
             throw SignatureException::missingHeader('X-Auth-Client-ID');
         }
 
         $authSignature = FilterVar::filterValue('cast:string|normal_string|trim', $request->header('X-Auth-Signature'));
-        if (empty($authSignature) || strlen($authSignature) !== 64) {
+        if (! is_string($authSignature) || strlen($authSignature) !== self::SIGNATURE_LENGTH || ! ctype_xdigit($authSignature)) {
             throw SignatureException::missingHeader('X-Auth-Signature');
         }
 
         return compact('authVersion', 'timestamp', 'clientId', 'authSignature');
+    }
+
+    /**
+     * @throws SignatureException
+     */
+    private function requireHeader(Request $request, string $name): string
+    {
+        $value = $request->header($name);
+
+        if (! is_string($value) || $value === '') {
+            throw SignatureException::missingHeader($name);
+        }
+
+        return $value;
     }
 
     /**
@@ -94,8 +183,7 @@ class ValidateAuthSignature
      */
     private function validateTimestamp(int $timestamp): void
     {
-        $currentTime = time();
-        if ($timestamp < ($currentTime - $this->timestampTolerance) || $timestamp > ($currentTime + $this->timestampTolerance)) {
+        if (abs(time() - $timestamp) > $this->timestampTolerance) {
             throw SignatureException::timestampExpired();
         }
     }
@@ -103,18 +191,27 @@ class ValidateAuthSignature
     /**
      * Validates rules specific to the client, like minimum auth version.
      *
+     * Both the client id and the auth version come straight off the wire, so
+     * neither may surface as an uncaught `InvalidConfigurationException` (and a
+     * 500) when it does not match the configuration — that would hand any
+     * unauthenticated caller a way to fill the error log with server errors.
+     *
      * @throws SignatureException
      */
     private function validateClientRules(string $clientId, int $authVersion): void
     {
-        $clientSettings = $this->config['clients'][$clientId] ?? null;
+        $clientSettings = $this->clients[$clientId] ?? null;
 
-        if ($clientSettings === null) {
-            throw InvalidConfigurationException::clientNotFound($clientId);
+        if (! is_array($clientSettings)) {
+            throw SignatureException::unknownClient();
         }
 
         $minAuthLevel = $clientSettings['min_auth_level'] ?? 0;
-        if ($authVersion < $minAuthLevel) {
+        if (is_int($minAuthLevel) && $authVersion < $minAuthLevel) {
+            throw SignatureException::upgradeRequired();
+        }
+
+        if (! isset($this->authVersions[$authVersion])) {
             throw SignatureException::upgradeRequired();
         }
     }
@@ -123,6 +220,8 @@ class ValidateAuthSignature
      * Validates the structure of the configuration array upon instantiation.
      *
      * @param  array<string, mixed>  $config
+     *
+     * @throws InvalidConfigurationException
      */
     private function validateConfig(array $config): void
     {
@@ -135,11 +234,11 @@ class ValidateAuthSignature
         }
 
         foreach ($config['clients'] as $clientId => $settings) {
-            if (empty($settings['client_secret']) || ! is_string($settings['client_secret'])) {
-                throw InvalidConfigurationException::missingClientSecret($clientId);
+            if (! is_array($settings) || empty($settings['client_secret']) || ! is_string($settings['client_secret'])) {
+                throw InvalidConfigurationException::missingClientSecret((string) $clientId);
             }
             if (empty($settings['bundle_id']) || ! is_string($settings['bundle_id'])) {
-                throw InvalidConfigurationException::missingBundleId($clientId);
+                throw InvalidConfigurationException::missingBundleId((string) $clientId);
             }
         }
     }
