@@ -6,7 +6,6 @@ namespace Aporat\AuthSignature;
 
 use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Contracts\Support\DeferrableProvider;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -16,7 +15,7 @@ use Illuminate\Support\ServiceProvider;
  * Registers the SignatureGenerator and ValidateAuthSignature middleware
  * in the service container and handles configuration merging and publishing.
  */
-class AuthSignatureServiceProvider extends ServiceProvider implements DeferrableProvider
+class AuthSignatureServiceProvider extends ServiceProvider
 {
     /**
      * Path to the package's configuration file.
@@ -25,6 +24,11 @@ class AuthSignatureServiceProvider extends ServiceProvider implements Deferrable
 
     /**
      * Bootstrap application services and publish configuration.
+     *
+     * This provider is intentionally *not* deferred. A deferred provider only
+     * boots once one of the services it `provides()` is resolved, so the
+     * middleware alias below — the very thing the router needs in order to
+     * resolve that middleware — would never be registered.
      *
      * @param  Router  $router  The Laravel router instance.
      */
@@ -49,34 +53,15 @@ class AuthSignatureServiceProvider extends ServiceProvider implements Deferrable
     {
         $this->mergeConfigFrom(self::CONFIG_PATH, 'auth-signature');
 
-        // Bind SignatureGenerator as a singleton. It will be instantiated only once.
-        $this->app->singleton(SignatureGenerator::class, function (Application $app) {
-            return new SignatureGenerator($app->make('config')->get('auth-signature'));
-        });
+        // Bound as singletons so the config validation and the per-client checks
+        // in the middleware constructor run once per process, not per request.
+        $this->app->singleton(SignatureGenerator::class, fn (Application $app) => new SignatureGenerator(
+            $app->make('config')->get('auth-signature', [])
+        ));
 
-        // Explicitly bind the middleware as a singleton. This ensures its dependencies
-        // are resolved correctly and consistently from the container.
-        $this->app->singleton(ValidateAuthSignature::class, function (Application $app) {
-            return new ValidateAuthSignature(
-                $app->make(SignatureGenerator::class),
-                $app->make('config')->get('auth-signature')
-            );
-        });
-    }
-
-    /**
-     * Get the services provided by the provider.
-     *
-     * This is required for DeferrableProvider to work correctly. It tells Laravel
-     * which services this provider is responsible for, allowing for lazy loading.
-     *
-     * @return array<int, class-string>
-     */
-    public function provides(): array
-    {
-        return [
-            SignatureGenerator::class,
-            ValidateAuthSignature::class,
-        ];
+        $this->app->singleton(ValidateAuthSignature::class, fn (Application $app) => new ValidateAuthSignature(
+            $app->make(SignatureGenerator::class),
+            $app->make('config')->get('auth-signature', [])
+        ));
     }
 }
