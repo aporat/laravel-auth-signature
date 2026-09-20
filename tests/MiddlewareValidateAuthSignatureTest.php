@@ -8,6 +8,8 @@ use Aporat\AuthSignature\Middleware\ValidateAuthSignature;
 use Aporat\AuthSignature\SignatureGenerator;
 use Aporat\FilterVar\FilterVarServiceProvider;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
@@ -166,6 +168,129 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
             'POST',
             server: ['CONTENT_TYPE' => 'application/json'],
             content: json_encode($params)
+        );
+        $request->headers->add([
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+            'X-Auth-Signature' => $signature,
+        ]);
+
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
+        $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function it_allows_a_json_body_that_was_trimmed_after_the_client_signed_it(): void
+    {
+        // `TrimStrings` and `ConvertEmptyStringsToNull` are *global* middleware,
+        // so they rewrite the parsed body before any route middleware sees it.
+        // Checking the signature against those rewritten values rejects every
+        // request whose payload carries surrounding whitespace, which the client
+        // has no way to detect — the signature covers the bytes on the wire.
+        $params = ['name' => 'Rabi ', 'bio' => ''];
+        $timestamp = time();
+        $signature = $this->generator->generate('test-client', 10, $timestamp, 'POST', '/api/test', $params);
+
+        $request = Request::create(
+            '/api/test',
+            'POST',
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode($params)
+        );
+        $request->headers->add([
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+            'X-Auth-Signature' => $signature,
+        ]);
+
+        (new TrimStrings)->handle($request, fn ($req) => new Response);
+        (new ConvertEmptyStringsToNull)->handle($request, fn ($req) => new Response);
+
+        // The transforms stay in effect for the application behind us.
+        $this->assertSame('Rabi', $request->input('name'));
+        $this->assertNull($request->input('bio'));
+
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
+        $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function it_allows_query_parameters_that_were_trimmed_after_the_client_signed_them(): void
+    {
+        // The same transforms clean the query bag, so a GET carrying a trailing
+        // space in a search term has to be read off the wire as well.
+        $params = ['query' => 'india '];
+        $timestamp = time();
+        $signature = $this->generator->generate('test-client', 10, $timestamp, 'GET', '/api/test', $params);
+
+        $request = Request::create('/api/test?query=india%20', 'GET');
+        $request->headers->add([
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+            'X-Auth-Signature' => $signature,
+        ]);
+
+        (new TrimStrings)->handle($request, fn ($req) => new Response);
+
+        $this->assertSame('india', $request->input('query'));
+
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
+        $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function it_rejects_a_request_whose_parsed_body_was_rewritten_to_match_the_signature(): void
+    {
+        // Reading the raw body must not become a way to sign one payload and
+        // have the application act on another: the bytes on the wire are what
+        // gets checked, whatever the parsed bag was later made to say.
+        $params = ['foo' => 'bar'];
+        $timestamp = time();
+        $signature = $this->generator->generate('test-client', 10, $timestamp, 'POST', '/api/test', $params);
+
+        $request = Request::create(
+            '/api/test',
+            'POST',
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode(['foo' => 'tampered'])
+        );
+        $request->headers->add([
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+            'X-Auth-Signature' => $signature,
+        ]);
+
+        $request->json()->replace($params);
+
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessage('Invalid signature.');
+
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
+        $middleware->handle($request, fn ($req) => new Response);
+    }
+
+    #[Test]
+    public function it_allows_a_signed_form_urlencoded_request(): void
+    {
+        $params = ['name' => 'Rabi ', 'tags' => ['India', 'travel']];
+        $timestamp = time();
+        $signature = $this->generator->generate('test-client', 10, $timestamp, 'POST', '/api/test', $params);
+
+        $request = Request::create(
+            '/api/test',
+            'POST',
+            server: ['CONTENT_TYPE' => 'application/x-www-form-urlencoded'],
+            content: http_build_query($params)
         );
         $request->headers->add([
             'X-Auth-Version' => 10,
