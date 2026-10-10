@@ -17,7 +17,7 @@ A robust Laravel package providing a middleware for validating API requests with
 - **HMAC-SHA256 Validation**: Securely validates incoming API requests.
 - **Configurable Signature Templates**: Easily define the exact order and components of the string-to-be-signed.
 - **Version-Specific Rules**: Apply different secrets, states, and signature templates based on an `X-Auth-Version` header.
-- **Timestamp Validation**: Protects against replay attacks by ensuring requests are recent.
+- **Timestamp Validation**: Rejects requests whose timestamp is outside a configurable window (±300 seconds by default). This limits how long a captured request can be replayed, but does not prevent replays inside the window: there is no nonce tracking.
 - **Simple Middleware Integration**: Secure your routes with a single middleware alias: `auth.signature`.
 - **Clean and Modern Codebase**: Fully typed, tested, and built on modern PHP and Laravel features.
 
@@ -54,8 +54,9 @@ Edit `config/auth-signature.php` to define your clients, authentication versions
 
 return [
     /*
-    | Defines the time window, in seconds, for which a signature is valid.
-    | This helps prevent replay attacks. Default is 300 seconds (5 minutes).
+    | Defines the time window, in seconds, either side of the server's clock
+    | in which a request timestamp is accepted. Default is 300 seconds. This
+    | narrows, but does not close, the window for replaying a captured request.
     */
     'timestamp_tolerance_seconds' => 300,
 
@@ -112,7 +113,24 @@ Route::middleware('auth.signature')->group(function () {
 });
 ```
 
-The middleware will automatically validate incoming requests and throw a `SignatureException` (resulting in a 4xx HTTP response) if validation fails.
+The middleware validates each incoming request and throws an `Aporat\AuthSignature\Exceptions\SignatureException` when validation fails. The exception's code holds the intended HTTP status (`400` malformed or missing header, `401` invalid signature or unknown client, `408` timestamp outside the window, `426` auth version too old or not configured), but the package does not yet turn it into that HTTP response: unless your application handles it, Laravel renders it as a `500` error and reports it to your logs. To return the intended status today, map it in `bootstrap/app.php`:
+
+```php
+use Aporat\AuthSignature\Exceptions\SignatureException;
+use Illuminate\Foundation\Configuration\Exceptions;
+
+->withExceptions(function (Exceptions $exceptions) {
+    $exceptions->dontReport(SignatureException::class);
+    $exceptions->render(fn (SignatureException $e) => response()->json(
+        ['message' => $e->getMessage()],
+        $e->getCode() >= 400 && $e->getCode() < 500 ? $e->getCode() : 401
+    ));
+})
+```
+
+### Replay protection
+
+A valid request can be replayed, unchanged, for as long as its timestamp stays inside `timestamp_tolerance_seconds` of the server clock (in either direction). The package does not track nonces or previously seen signatures, so if you need one-time requests, add that check in your application.
 
 ### What the signature covers
 
@@ -190,8 +208,7 @@ A client would then make a request including the generated signature and other r
 TIMESTAMP=$(date +%s)
 SIGNATURE="..." # Generate signature using the same timestamp
 
-curl -X GET "[http://yourapp.test/api/orders?page=1](http://yourapp.test/api/orders?page=1)" \
-  -H "Content-Type: application/json" \
+curl -X GET "http://yourapp.test/api/orders?page=1" \
   -H "X-Auth-Client-ID: your-client-id" \
   -H "X-Auth-Version: 10" \
   -H "X-Auth-Timestamp: $TIMESTAMP" \

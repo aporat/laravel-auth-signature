@@ -1,0 +1,17 @@
+# Normalize line endings in the repository.
+* text=auto eol=lf
+
+# Keep development files out of the Composer dist archive.
+/.github            export-ignore
+/tests              export-ignore
+/.gitattributes     export-ignore
+/.gitignore         export-ignore
+/CONTRIBUTING.md    export-ignore
+/phpunit.xml        export-ignore
+/phpunit.xml.dist   export-ignore
+/phpstan.neon       export-ignore
+/phpstan.neon.dist  export-ignore
+/junit.xml          export-ignore
+/coverage.xml       export-ignore
+/coverage           export-ignore
+/build              export-ignore
