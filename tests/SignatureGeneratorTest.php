@@ -276,4 +276,47 @@ class SignatureGeneratorTest extends TestCase
         $generator = new SignatureGenerator($config);
         $generator->generate('id', 1, time(), 'GET', '/', []);
     }
+
+    #[Test]
+    public function the_secret_override_replaces_only_the_client_secret(): void
+    {
+        $config = [
+            'clients' => ['id' => ['client_secret' => 'configured', 'bundle_id' => 'b']],
+            'auth_versions' => [1 => ['secret' => 'v1', 'state' => 's']],
+        ];
+        $generator = new SignatureGenerator($config);
+        $string = $generator->stringToSign('id', 1, 1726669826, 'GET', '/a', ['x' => 1]);
+
+        $this->assertSame(hash_hmac('sha256', $string, 'configuredv1'), $generator->generate('id', 1, 1726669826, 'GET', '/a', ['x' => 1]));
+        $this->assertSame(hash_hmac('sha256', $string, 'otherv1'), $generator->generate('id', 1, 1726669826, 'GET', '/a', ['x' => 1], 'other'));
+    }
+
+    #[Test]
+    public function the_secret_override_works_without_a_configured_client_secret(): void
+    {
+        $generator = new SignatureGenerator([
+            'clients' => ['id' => ['bundle_id' => 'b']],
+            'auth_versions' => [1 => []],
+        ]);
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $generator->generate('id', 1, 1, 'GET', '/', [], 'given'));
+
+        $this->expectException(InvalidConfigurationException::class);
+        $generator->generate('id', 1, 1, 'GET', '/', []);
+    }
+
+    #[Test]
+    public function string_to_sign_exposes_the_canonical_string(): void
+    {
+        $generator = new SignatureGenerator([
+            'clients' => ['id' => ['client_secret' => 'secret', 'bundle_id' => 'com.b']],
+            'auth_versions' => [1 => ['state' => 'st']],
+        ]);
+
+        $string = $generator->stringToSign('id', 1, 1726669826, 'post', '/a%20b', ['B' => 'x y', 'a' => 1]);
+
+        $this->assertStringContainsString('/a b', $string);
+        $this->assertStringContainsString('1726669826', $string);
+        $this->assertStringNotContainsString('secret', $string);
+    }
 }
