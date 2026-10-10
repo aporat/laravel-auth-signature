@@ -27,14 +27,6 @@ jobs:
           php-version: 8.5
           tools: composer:v2
 
-      - name: Cache Composer dependencies
-        uses: actions/cache@v6
-        with:
-          path: vendor
-          key: ubuntu-php-8.5-lint-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ubuntu-php-8.5-lint-
-
       - name: Install Dependencies
         uses: ramsey/composer-install@v4
 
@@ -57,14 +49,6 @@ jobs:
           php-version: 8.5
           tools: composer:v2
 
-      - name: Cache Composer dependencies
-        uses: actions/cache@v6
-        with:
-          path: vendor
-          key: ubuntu-php-8.5-analyse-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ubuntu-php-8.5-analyse-
-
       - name: Install Dependencies
         uses: ramsey/composer-install@v4
 
@@ -84,6 +68,15 @@ jobs:
       matrix:
         php: [8.4, 8.5]
         laravel: [12.*, 13.*]
+        include:
+          - laravel: 12.*
+            testbench: ^10.0
+          - laravel: 13.*
+            testbench: ^11.0
+          # Coverage is collected in a single lane; the others run without a driver.
+          - php: 8.5
+            laravel: 13.*
+            coverage: xdebug
 
     steps:
       - name: Checkout Code
@@ -94,31 +87,41 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, json, openssl
-          coverage: xdebug
+          coverage: ${{ matrix.coverage || 'none' }}
+          tools: composer:v2
 
-      - name: Cache Composer dependencies
-        uses: actions/cache@v6
-        with:
-          path: vendor
-          key: ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ubuntu-${{ matrix.php }}-${{ matrix.laravel }}-
+      # There is no committed composer.lock, so without this every lane would
+      # resolve the newest Laravel the constraints allow.
+      - name: Select Laravel ${{ matrix.laravel }}
+        run: composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-update --no-interaction
 
+      # Resolves and installs the selected versions. Its cache of Composer
+      # downloads is keyed on the (now lane-specific) composer.json.
       - name: Install Dependencies
         uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: highest
+
+      - name: Show installed versions
+        run: composer show | grep -E '^(laravel/framework|orchestra/testbench|phpunit/phpunit) '
 
       - name: Execute tests (PHPUnit)
+        if: matrix.coverage != 'xdebug'
+        run: composer test
+
+      - name: Execute tests with coverage (PHPUnit)
+        if: matrix.coverage == 'xdebug'
         run: composer test-ci
 
       - name: Upload coverage to Codecov
-        if: matrix.php == '8.5' && matrix.laravel == '13.*'
+        if: matrix.coverage == 'xdebug'
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
 
       - name: Upload test results to Codecov
-        if: matrix.php == '8.5' && matrix.laravel == '13.*'
+        if: ${{ matrix.coverage == 'xdebug' && !cancelled() }}
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
