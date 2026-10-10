@@ -54,16 +54,52 @@ readonly class SignatureGenerator
     ) {}
 
     /**
-     * @param  array<string, mixed>  $params
+     * Computes the hex HMAC-SHA256 signature of a request.
+     *
+     * @param  array<array-key, mixed>  $params
+     * @param  string|null  $secret  Replaces the client's configured
+     *                               `client_secret`. The auth version's own
+     *                               `secret`, if any, is still appended.
      *
      * @throws InvalidConfigurationException
      */
-    public function generate(string $clientId, int $authVersion, int $timestamp, string $method, string $path, array $params): string
+    public function generate(
+        string $clientId,
+        int $authVersion,
+        int $timestamp,
+        string $method,
+        string $path,
+        array $params,
+        ?string $secret = null,
+    ): string {
+        $clientConfig = $this->getClientConfig($clientId);
+        $versionConfig = $this->getAuthVersionConfig($authVersion);
+
+        $clientSecret = $secret ?? $clientConfig['client_secret'] ?? null;
+
+        if (! is_string($clientSecret) || $clientSecret === '') {
+            throw InvalidConfigurationException::missingClientSecret($clientId);
+        }
+
+        $stringToSign = $this->stringToSign($clientId, $authVersion, $timestamp, $method, $path, $params);
+
+        return hash_hmac('sha256', $stringToSign, $clientSecret.($versionConfig['secret'] ?? ''));
+    }
+
+    /**
+     * The exact string that generate() signs, for debugging a mismatch. It
+     * contains no secrets.
+     *
+     * @param  array<array-key, mixed>  $params
+     *
+     * @throws InvalidConfigurationException
+     */
+    public function stringToSign(string $clientId, int $authVersion, int $timestamp, string $method, string $path, array $params): string
     {
         $clientConfig = $this->getClientConfig($clientId);
         $versionConfig = $this->getAuthVersionConfig($authVersion);
 
-        $stringToSign = $this->buildStringToSign(
+        return $this->buildStringToSign(
             $this->buildCanonicalParameters($params),
             // Clients sign the decoded path (`URL.path` on iOS). `getPathInfo()`
             // hands us the raw, percent-encoded path, and `rawurldecode` is the
@@ -77,10 +113,6 @@ readonly class SignatureGenerator
             $versionConfig,
             $timestamp
         );
-
-        $clientSecret = $clientConfig['client_secret'].($versionConfig['secret'] ?? '');
-
-        return hash_hmac('sha256', $stringToSign, $clientSecret);
     }
 
     /**

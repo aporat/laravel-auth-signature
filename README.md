@@ -19,6 +19,7 @@ A robust Laravel package providing a middleware for validating API requests with
 - **Version-Specific Rules**: Apply different secrets, states, and signature templates based on an `X-Auth-Version` header.
 - **Timestamp Validation**: Rejects requests whose timestamp is outside a configurable window (±300 seconds by default). This limits how long a captured request can be replayed, but does not prevent replays inside the window: there is no nonce tracking.
 - **Simple Middleware Integration**: Secure your routes with a single middleware alias: `auth.signature`.
+- **Client-side Signing**: Sign outgoing requests with `Http::withSignature()`. Print the headers or a curl command with `php artisan auth-signature:sign`.
 - **Clean and Modern Codebase**: Fully typed, tested, and built on modern PHP and Laravel features.
 
 ---
@@ -214,6 +215,94 @@ curl -X GET "http://yourapp.test/api/orders?page=1" \
   -H "X-Auth-Timestamp: $TIMESTAMP" \
   -H "X-Auth-Signature: $SIGNATURE"
 ```
+
+### Signing outgoing requests (`Http::withSignature`)
+
+The package registers a `withSignature()` macro on Laravel's HTTP client, so one Laravel app can call another that is protected by this middleware:
+
+```php
+use Illuminate\Support\Facades\Http;
+
+// GET with a query string
+Http::withSignature('ios-app')->get('https://api.example.com/api/orders', ['status' => 'open']);
+
+// JSON body (the default)
+Http::withSignature('ios-app')->post('https://api.example.com/api/orders', ['item' => 'book', 'qty' => 2]);
+
+// Form body, explicit auth version, and a secret supplied at runtime
+Http::withSignature('ios-app', authVersion: 20, secret: $secretFromVault)
+    ->asForm()
+    ->post('https://api.example.com/api/orders', ['item' => 'book']);
+```
+
+`withSignature(string $clientId, ?int $authVersion = null, ?string $secret = null)`:
+
+- **`$clientId`**: a client from your `auth-signature.clients` config. The client's `bundle_id` is part of the signed string, so the client must be configured on the sending side too.
+- **`$authVersion`**: defaults to the client's `min_auth_level` when that is a configured version, otherwise to the highest configured auth version.
+- **`$secret`**: replaces the client's `client_secret` (useful when the sending app doesn't keep secrets in config). The auth version's `secret` is still appended, just as the middleware does.
+- The timestamp is the current time when the request is sent.
+
+An unknown client or auth version throws `InvalidConfigurationException` as soon as `withSignature()` is called.
+
+The signature is computed in a request middleware just before the request leaves, so it covers the request exactly as sent: final method, path, query string and encoded body. It uses `SignatureGenerator` and reads the parameters the same way `ValidateAuthSignature` does:
+
+- JSON bodies (`application/json`, `+json`) are decoded.
+- Form bodies (`application/x-www-form-urlencoded`) are parsed.
+- Query parameters are merged in, with body values winning on a key conflict.
+- Other body types contribute no parameters, matching the middleware.
+- Multipart bodies (`attach()`) can't be signed and throw `InvalidArgumentException`, because the middleware sees multipart fields only after PHP has parsed them.
+
+The signed path is the URL path. If the receiving app is served from a subdirectory (so its `getPathInfo()` is shorter than the URL path), signatures won't match.
+
+The macro works with `Http::fake()`: the request recorded by the fake carries the `X-Auth-*` headers.
+
+### Signing from the command line (`auth-signature:sign`)
+
+`php artisan auth-signature:sign` prints the headers for a request, signed with a configured client. It is useful for testing an endpoint with curl or for debugging a client's signature. The secrets are never printed.
+
+```
+php artisan auth-signature:sign {method} {url}
+    [--client=]          client id (optional when exactly one client is configured)
+    [--auth-version=]    defaults as for the macro
+    [--data=]            JSON body, sent as application/json
+    [--form=key=value]   form field, repeatable (sent form-urlencoded)
+    [--query=key=value]  query parameter, repeatable
+    [--timestamp=]       Unix timestamp to sign with (default: now)
+    [--curl]             print a ready-to-run curl command
+    [--debug] / -v       also print the canonical string being signed
+```
+
+`url` may be a full URL or a path, which is resolved against `app.url`. Form and query keys can use bracket syntax (`--form='tags[]=a'`).
+
+```console
+$ php artisan auth-signature:sign GET /api/orders --query=status=open --query=page=2
+X-Auth-Client-ID: ios-app
+X-Auth-Version: 20
+X-Auth-Timestamp: 1760000000
+X-Auth-Signature: 99ee00ab47d77973a5baff5150990bf8bb379a5445cf84ff337d976970e28aa7
+
+$ php artisan auth-signature:sign POST /api/orders --data='{"item":"book","qty":2}' --curl
+curl -X 'POST' 'https://api.example.com/api/orders' \
+  -H 'X-Auth-Client-ID: ios-app' \
+  -H 'X-Auth-Version: 20' \
+  -H 'X-Auth-Timestamp: 1760000000' \
+  -H 'X-Auth-Signature: 96edb3e6423e4d8b5b222a4ccbcac91d7f6fbe6cb1f71d4620dfb1ef7a97d694' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"item":"book","qty":2}'
+
+$ php artisan auth-signature:sign POST /api/orders --form=item=book --form='tags[]=x' --debug
+Method: POST
+URL: https://api.example.com/api/orders
+Path signed: /api/orders
+String to sign: com.example.ios1760000000ios-appv20-state20POSTitem=book&tags%5B0%5D=x/api/orders
+
+X-Auth-Client-ID: ios-app
+...
+```
+
+The `--debug` canonical string has no secrets in it, but it does include the client's `bundle_id` and the auth version's `state`. Compare it with the string your client builds to find a mismatch.
+
+The generated headers are valid only within `timestamp_tolerance_seconds` of the timestamp.
 
 ---
 
