@@ -183,6 +183,21 @@ class ClientSigningTest extends TestCase
     }
 
     #[Test]
+    public function macro_signs_a_json_object_with_counting_keys_as_an_object(): void
+    {
+        $sent = $this->captureSent(fn () => Http::withSignature('ios-app')
+            ->post('http://localhost/api/orders', [
+                'picks' => [0, 1],
+                'drop_examples' => (object) ['0' => [3], '1' => [0, 2]],
+            ]));
+
+        $this->assertStringContainsString('"drop_examples":{"0":[3],"1":[0,2]}', (string) $sent->getBody());
+
+        $this->replay($sent)->assertOk();
+        $this->assertSame(['0' => [3], '1' => [0, 2]], self::$reached[0]['input']['drop_examples']);
+    }
+
+    #[Test]
     public function macro_signs_a_form_post_body_as_sent(): void
     {
         $sent = $this->captureSent(fn () => Http::withSignature('ios-app')
@@ -311,6 +326,18 @@ class ClientSigningTest extends TestCase
             'X-Auth-Signature' => $this->app->make(SignatureGenerator::class)
                 ->generate('ios-app', 20, 1_700_000_000, 'POST', '/api/orders', ['a' => 1, 'b' => '2']),
         ], $headers);
+    }
+
+    #[Test]
+    public function signer_reads_a_json_object_with_counting_keys_as_an_object(): void
+    {
+        $signer = $this->app->make(RequestSigner::class);
+        $request = new Psr7Request('POST', 'http://localhost/api/orders', ['Content-Type' => 'application/json'], '{"m":{"0":1,"1":2}}');
+
+        $this->assertStringContainsString(
+            'm='.rawurlencode('{"0":1,"1":2}'),
+            $signer->stringToSign($request, 'ios-app', 20, 1_700_000_000)
+        );
     }
 
     // --- auth-signature:sign -----------------------------------------------

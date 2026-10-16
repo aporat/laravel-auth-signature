@@ -10,6 +10,7 @@ use Aporat\AuthSignature\SignatureGenerator;
 use Aporat\FilterVar\Facades\FilterVar;
 use Closure;
 use Illuminate\Http\Request;
+use stdClass;
 use Symfony\Component\HttpFoundation\Response;
 
 use function abs;
@@ -154,7 +155,15 @@ class ValidateAuthSignature
         $content = $request->getContent();
 
         if ($request->isJson()) {
-            $decoded = $content === '' ? null : json_decode($content, true);
+            // Decoded with objects kept as `stdClass`: an associative array
+            // cannot tell `{"0":1,"1":2}` from `[1,2]`, and the clients sign
+            // the two differently (sorted JSON against expanded `key[i]`
+            // pairs). Only the top level becomes the parameter array.
+            $decoded = $content === '' ? null : json_decode($content);
+
+            if ($decoded instanceof stdClass) {
+                return (array) $decoded;
+            }
 
             // A body something else has already consumed leaves nothing to
             // re-read. Falling back to the parsed bag keeps such a request

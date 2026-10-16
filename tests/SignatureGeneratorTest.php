@@ -195,6 +195,25 @@ class SignatureGeneratorTest extends TestCase
                 'params' => ['a b' => 'c+d/e~f'],
                 'canonical' => 'a%20b=c%2Bd%2Fe~f',
             ],
+            'a decoded object whose keys count from zero stays an object' => [
+                // `{"0":[0,1],"1":[0]}` as the clients send it: a dictionary, signed
+                // as sorted JSON. Decoded to an array it would be a list and expand
+                // into `drop[0][0]=0&…`, which is what rejected real traffic.
+                'params' => ['drop' => (object) ['1' => [0], '0' => [0, 1]]],
+                'canonical' => 'drop='.rawurlencode('{"0":[0,1],"1":[0]}'),
+            ],
+            'decoded objects sort their keys as strings at every level' => [
+                'params' => ['o' => (object) ['b' => (object) ['10' => 1, '9' => 2], 'a' => (object) []]],
+                'canonical' => 'o='.rawurlencode('{"a":{},"b":{"10":1,"9":2}}'),
+            ],
+            'an empty decoded object encodes as an empty value' => [
+                'params' => ['x' => (object) []],
+                'canonical' => 'x=',
+            ],
+            'a decoded object inside a list is sorted compact json' => [
+                'params' => ['m' => [(object) ['1' => 'b', '0' => 'a']]],
+                'canonical' => rawurlencode('m[0]').'='.rawurlencode('{"0":"a","1":"b"}'),
+            ],
         ];
     }
 

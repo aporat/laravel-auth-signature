@@ -183,6 +183,56 @@ class MiddlewareValidateAuthSignatureTest extends TestCase
     }
 
     #[Test]
+    public function it_signs_a_json_object_with_counting_keys_as_an_object(): void
+    {
+        // A production body that was rejected: `drop_examples` is a dictionary
+        // keyed "0" to "7". The iOS client signs it as sorted compact JSON;
+        // `json_decode(…, true)` turned it into a list, which canonicalises as
+        // `drop_examples[0][0]=0&…` and never matches.
+        $body = '{"run_id":58,"drop_examples":{"0":[0,1,2,3],"1":[0],"2":[0,1,2,3],"3":[0,2,3],'
+            .'"4":[0,1,2,3],"5":[0,1,2,3],"6":[0,1,2,3],"7":[0,1]},"picks":[0,1,2,3,4,5,6,7]}';
+        $timestamp = time();
+        $path = '/postbee/profiles/3/viewpoints/bulk';
+
+        // What the client signs: the dictionary as an object, keys sorted.
+        $clientParams = [
+            'run_id' => 58,
+            'drop_examples' => (object) [
+                '0' => [0, 1, 2, 3], '1' => [0], '2' => [0, 1, 2, 3], '3' => [0, 2, 3],
+                '4' => [0, 1, 2, 3], '5' => [0, 1, 2, 3], '6' => [0, 1, 2, 3], '7' => [0, 1],
+            ],
+            'picks' => [0, 1, 2, 3, 4, 5, 6, 7],
+        ];
+        $this->assertStringContainsString(
+            'drop_examples='.rawurlencode('{"0":[0,1,2,3],"1":[0],"2":[0,1,2,3],"3":[0,2,3],"4":[0,1,2,3],"5":[0,1,2,3],"6":[0,1,2,3],"7":[0,1]}')
+                .'&'.rawurlencode('picks[0]').'=0',
+            $this->generator->stringToSign('test-client', 10, $timestamp, 'POST', $path, $clientParams)
+        );
+        $signature = $this->generator->generate('test-client', 10, $timestamp, 'POST', $path, $clientParams);
+
+        // The same body decoded to arrays signs differently, so the middleware
+        // must not read it that way.
+        $this->assertNotSame(
+            $signature,
+            $this->generator->generate('test-client', 10, $timestamp, 'POST', $path, json_decode($body, true))
+        );
+
+        $request = Request::create($path, 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+        $request->headers->add([
+            'X-Auth-Version' => 10,
+            'X-Auth-Timestamp' => $timestamp,
+            'X-Auth-Client-ID' => 'test-client',
+            'X-Auth-Signature' => $signature,
+        ]);
+
+        $middleware = new ValidateAuthSignature($this->generator, $this->config);
+        $response = $middleware->handle($request, fn ($req) => new Response('OK', 200));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame([0, 2, 3], $request->input('drop_examples.3'));
+    }
+
+    #[Test]
     public function it_allows_a_json_body_that_was_trimmed_after_the_client_signed_it(): void
     {
         // `TrimStrings` and `ConvertEmptyStringsToNull` are *global* middleware,

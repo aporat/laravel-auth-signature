@@ -8,6 +8,7 @@ use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
 use Aporat\AuthSignature\SignatureGenerator;
 use InvalidArgumentException;
 use Psr\Http\Message\RequestInterface;
+use stdClass;
 
 use function array_filter;
 use function array_keys;
@@ -223,7 +224,13 @@ readonly class RequestSigner
         }
 
         if ($isJson) {
-            $decoded = json_decode($content, true);
+            // Objects stay `stdClass` below the top level, as in the middleware,
+            // so `{"0":1,"1":2}` is signed as an object and not as a list.
+            $decoded = json_decode($content);
+
+            if ($decoded instanceof stdClass) {
+                return (array) $decoded;
+            }
 
             return is_array($decoded) ? $decoded : [];
         }

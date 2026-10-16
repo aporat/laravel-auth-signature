@@ -11,6 +11,7 @@ use const JSON_UNESCAPED_UNICODE;
 use const SORT_STRING;
 
 use Aporat\AuthSignature\Exceptions\InvalidConfigurationException;
+use stdClass;
 
 use function array_is_list;
 use function hash_hmac;
@@ -181,10 +182,24 @@ readonly class SignatureGenerator
 
     /**
      * Encodes a single parameter, expanding list values recursively.
+     *
+     * A JSON object decoded as `stdClass` is always an object, however its
+     * keys look. A PHP array is a list when `array_is_list` says so and an
+     * object otherwise, which is right for every array except one decoded
+     * from `{"0":…,"1":…}` — the reason the middleware and the client signer
+     * decode objects as `stdClass`.
      */
     private function encodePair(string $key, mixed $value): string
     {
         $encodedKey = rawurlencode($key);
+
+        if ($value instanceof stdClass) {
+            if ((array) $value === []) {
+                return $encodedKey.'=';
+            }
+
+            return $encodedKey.'='.rawurlencode($this->encodeObject($value));
+        }
 
         if (is_array($value) && array_is_list($value)) {
             if ($value === []) {
@@ -210,9 +225,9 @@ readonly class SignatureGenerator
      * Compact JSON with recursively sorted object keys, matching
      * `JSONSerialization` with `.sortedKeys` and `.withoutEscapingSlashes`.
      *
-     * @param  array<array-key, mixed>  $value
+     * @param  array<array-key, mixed>|stdClass  $value
      */
-    private function encodeObject(array $value): string
+    private function encodeObject(array|stdClass $value): string
     {
         return json_encode(
             $this->sortKeysRecursively($value),
@@ -245,17 +260,34 @@ readonly class SignatureGenerator
     }
 
     /**
-     * @param  array<array-key, mixed>  $data
-     * @return array<array-key, mixed>
+     * Sorts object keys as strings at every level. A `stdClass` comes back as
+     * a `stdClass` so that `json_encode` keeps it an object even when its
+     * keys are `"0"`, `"1"`, …, which as an array would encode as a list.
+     *
+     * @param  array<array-key, mixed>|stdClass  $data
+     * @return array<array-key, mixed>|stdClass
      */
-    private function sortKeysRecursively(array $data): array
+    private function sortKeysRecursively(array|stdClass $data): array|stdClass
     {
+        if ($data instanceof stdClass) {
+            $properties = (array) $data;
+            ksort($properties, SORT_STRING);
+
+            foreach ($properties as $key => $value) {
+                if (is_array($value) || $value instanceof stdClass) {
+                    $properties[$key] = $this->sortKeysRecursively($value);
+                }
+            }
+
+            return (object) $properties;
+        }
+
         if (! array_is_list($data)) {
             ksort($data, SORT_STRING);
         }
 
         foreach ($data as $key => $value) {
-            if (is_array($value)) {
+            if (is_array($value) || $value instanceof stdClass) {
                 $data[$key] = $this->sortKeysRecursively($value);
             }
         }
